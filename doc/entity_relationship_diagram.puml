@@ -1,0 +1,152 @@
+@startuml
+' -- Nastavení základních stylů --
+skinparam linetype ortho
+left to right direction
+
+hide methods
+hide circles
+hide stereotypes
+
+' skinparam linetype ortho
+skinparam nodesep 150
+skinparam ranksep 150
+
+
+skinparam class {
+    ' Pro seznam atributů
+    AttributeFontSize 14
+    AttributeFontColor black
+    AttributeFontName "Arial"
+
+    ' Pro text na šipkách (tj. i kardinality)
+    arrowFontSize 14
+    arrowFontColor black
+    arrowFontName "Arial"
+
+    ' Globální barvy/rámeček
+    BackgroundColor lemonchiffon
+    BorderColor black
+    BorderThickness 1
+    Shadowing true
+
+    FontSize 18
+}
+
+'========== Definice TŘÍD (ENTIT) ==========
+class "<b>Hvězda\n<<Weak>>" as Star {
+  <b><<D>> ID_hvezdy
+  Název
+  Typ
+}
+
+class "<b>Planetární systém" as PlanetarySystem {
+  <b><<PK>> ID_planetarniho_systemu
+  Název
+  Spadá_do_impéria (Y/N)
+}
+
+class "<b>Planeta\n<<Weak>>" as Planet {
+  <b><<D>> ID_planety
+  Název
+  Vzdálenost_oběžná_od_hvězdy
+  Hmotnost
+  Počet_obyvatel
+  Typ
+}
+
+class "<b>Uživatel" as User {
+  <b><<PK>> ID_uzivatele
+  Jméno
+  Příjmení
+}
+
+class "<b>Světlý meč" as Lightsaber {
+  <b><<PK>> ID_svetelneho_mece
+  Název
+  Typ
+  Barva
+  Stav_opotřebení
+}
+
+class "<b>Loď" as Ship {
+  <b><<PK>> ID_lodi
+  Název
+  Typ
+  Stav_poškození
+}
+
+class "<b>Flotila" as Fleet {
+  <b><<PK>> ID_flotily
+  Název
+}
+
+class "<b>Rozkaz" as Order {
+  <b><<PK>> ID_rozkazu
+  Typ
+  Popis
+  Datum
+  Stav
+}
+
+class "<b>Rytíř Jedi" as Jedi {
+  Rasa
+  Midi-chloriany
+  Narozeniny
+}
+
+class "<b>Velitel" as Commander {
+}
+
+class "<b>Imperátor Palpatine" as Imperator {
+
+}
+
+class "<b>Chemický prvek" as Chemic {
+    <b><<PK>> ID_prvku
+    Název
+    Symbol
+}
+
+User <|- Jedi
+User <|- Imperator
+Jedi <|- Commander
+
+'========== DEFINICE ASOCIACÍ S UML NÁSOBNOSTMI ==========
+' Zde ukázkově uvádím multiplicity a text popisující vazbu.
+' Upravte podle své potřeby (např. 1..*, 0..1, atd.).
+
+' Planetární systém – Hvězda (identifikuje)
+PlanetarySystem "<b>1" -- "<b>1..n" Star : "<b><<identif>>"
+
+' Planetární systém – Planet (identifikuje)
+PlanetarySystem "<b>1" -- "<b>0..n" Planet : "<b><<identif>>"
+
+' Planet – Uživatel (domovem)
+Planet "<b>0..1" -- "<b>0..1" User : "<b>Narodil se na"
+
+' Uživatel – Světlý meč (vlastní)
+Jedi "<b>0..n" -- "<b>0..n" Lightsaber : "<b>Vlastní"
+
+' Uživatel – Uživatel (Padawanem; od-do)
+Jedi "<b>0..n" -- "<b>0..n" Jedi : "<b>Padawanem"
+
+' Uživatel – Fleet (velí)
+Commander "<b>1" -- "<b>0..n" Fleet : "<b>Velí"
+
+' Fleet – Loď (patří)
+Fleet "<b>0..1" -- "<b>0..n" Ship : "<b>Patří (user experience comment)"
+
+' Loď – Planet (nachází se na orbitu)
+Planet "<b>0..1" -- "<b>0..n" Fleet : "<b>Nachází se na orbitu"
+
+' Loď – Uživatel (nachází se na palubě)
+Ship "<b>0..n" -- "<b>0..n" Jedi : "<b>Nachází se na palubě"
+
+' Fleet – Order (plní)
+Fleet "<b>0..1" -- "<b>0..n" Order : "<b>Plní"
+
+Star "<b>0..n" -- "<b>1..n" Chemic : "<b>Skládá se z (atr: % zastoupení"
+
+Planet "<b>0..n" -- "<b>0..n" Chemic : "<b>Zastoupení v atmosféře (atr: % zastoupení"
+
+@enduml

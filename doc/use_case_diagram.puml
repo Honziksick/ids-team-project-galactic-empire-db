@@ -1,0 +1,68 @@
+@startuml
+
+' Vynutíme, aby se vše řadilo zleva doprava (resp. shora dolů)
+left to right direction
+
+' Nastavíme vzhled
+skinparam actorStyle sticky
+
+skinparam UseCase {
+    FontSize 12
+    FontColor black
+    FontName "Arial"
+    Shadowing true
+    BackgroundColor lemonchiffon
+    BorderColor black
+    BorderThickness 1
+}
+
+' ------------------------------------------------------------------------------
+
+' AKTÉŘI
+actor "Čas" as Time
+actor "Rytíř Jedi" as User
+actor "Velitel flotily" as FleetCommander
+actor "Imperátor Palpatine" as Emperor
+actor "Správce" as Admin
+
+' GENERALIZACE / SPECIALIZACE
+User <|- FleetCommander
+FleetCommander <|- Emperor
+
+' ------------------------------------------------------------------------------
+
+' ČAS
+(Time) --> (Pošli přání k narozeninám)
+
+' UŽIVATEL
+(User) --> (Zobraz světelný meč)
+(User) --> (Přidej / odeber / uprav světelný meč)
+
+' VELITEL FLOTILY
+(FleetCommander) --> (Zobraz loď)
+(FleetCommander) --> (Zobraz rozkaz)
+(FleetCommander) --> (Přidej / odeber / uprav loď)
+(FleetCommander) --> (Změň stav rozkazu)
+
+' IMPERÁTOR
+(Emperor) --> (Zobraz planetární systém)
+(Emperor) --> (Zobraz uživatele)
+(Emperor) --> (Zobraz flotilu)
+(Emperor) --> (Přidej / odeber / uprav rozkaz)
+(Emperor) --> (Změň velitele)
+(Emperor) --> (Pozvi rytíře Jedi / správce na setkání :D)
+
+' SPRÁVCE
+(Admin) --> (Zobraz planetární systém)
+(Admin) --> (Zobraz uživatele)
+(Admin) --> (Zobraz flotilu)
+(Admin) --> (Zobraz planetu)
+(Admin) --> (Zobraz hvězdu)
+(Admin) --> (Přidej / odeber / uprav planetární systém)
+(Admin) --> (Přidej / odeber / uprav uživatele)
+(Admin) --> (Přidej / odeber / uprav flotilu)
+(Admin) --> (Přidej / odeber / uprav hvězdu)
+(Admin) --> (Přidej / odeber / uprav planetu)
+(Admin) --> (Přidej / odeber / uprav chemický prvek)
+
+@enduml
