@@ -1,10 +1,11 @@
+-- Active: 1743342513549@@gort.fit.vutbr.cz@1521@orclpdb@XKREJCD00>
 /*
  * Téma:   Zadání IUS 2023/24 – Galaktické impérium (68)
  *
  * Autoři: Jan Kalina    <xkalinj00>
  *         David Krejčí  <xkrejcd00>
  *
- * Datum:  28.03.2025
+ * Datum:  30.03.2025
  */
 
 -- ******************************* --
@@ -69,7 +70,7 @@ CREATE TABLE Uzivatel
     jmeno                      VARCHAR2(100)                                               NOT NULL,
     prijmeni                   VARCHAR2(100)                                               NOT NULL,
     typ_uzivatele              VARCHAR2(20) CHECK (typ_uzivatele IN ('jedi', 'imperator')) NOT NULL,
-    subtyp_uzivatele           VARCHAR2(20) CHECK (subtyp_uzivatele IN ('rytir', 'velitel')),
+    subtyp_uzivatele           VARCHAR2(20) CHECK (subtyp_uzivatele IN ('rytíř', 'velitel')),
     rasa                       VARCHAR2(100),
     mnozstvi_midichlorianu     NUMBER CHECK (mnozstvi_midichlorianu >= 0), -- Množství midichlorianů (kladná hodnota)
     narozeniny                 DATE,
@@ -86,8 +87,8 @@ CREATE OR REPLACE TRIGGER trg_check_subtyp_uzivatele
     ON Uzivatel
     FOR EACH ROW
 BEGIN
-    -- Jedi musí mít  subtyp 'rytir' nebo 'velitel'!
-    IF :NEW.typ_uzivatele = 'jedi' AND :NEW.subtyp_uzivatele NOT IN ('rytir', 'velitel') THEN
+    -- Jedi musí mít  subtyp 'rytíř' nebo 'velitel'!
+    IF :NEW.typ_uzivatele = 'jedi' AND :NEW.subtyp_uzivatele NOT IN ('rytíř', 'velitel') THEN
         RAISE_APPLICATION_ERROR(-20001, 'Neplatný subtyp_uzivatele pro typ_uzivatele "jedi".');
         -- Imperátora musí být subtyp NULL!
     ELSIF :NEW.typ_uzivatele = 'imperator' AND :NEW.subtyp_uzivatele IS NOT NULL THEN
@@ -102,6 +103,8 @@ END;
 -- Tabulka Padawan (reprezentace unárního vztahu mezi mistry a padawany) --
 -- ********************************************************************* --
 
+-- Poznámka k datům:
+-- Léta jsou ve formátu BBY (Před bitvou o Yavin), to znamená, že menší čislo je mladší
 CREATE TABLE Padawan
 (
     id_mistra    NUMBER,
@@ -109,7 +112,8 @@ CREATE TABLE Padawan
     padawanem_od DATE,
     padawanem_do DATE,
     PRIMARY KEY (id_mistra, id_padawana), -- Unární vztah má složený primární klíč
-    CHECK (padawanem_od < padawanem_do)   -- Kontrola, že datum začátku je před datem konce
+    CHECK (datum_vydani.YEAR > termin_splneni.YEAR OR
+    (datum_vydani.YEAR == termin_splneni.YEAR AND datum_vydani <= termin_spleni)), -- Kontrola, že datum začátku je před datem konce
     -- <<FK>> na mistra (uživatele)
     -- <<FK>> na padawana (uživatele)
 );
@@ -223,7 +227,7 @@ CREATE TABLE Flotila
     nazev_flotily VARCHAR2(50),
     id_systemu    NUMBER,
     id_planety    NUMBER,
-    id_velitele   NUMBER
+    id_velitele   NUMBER UNIQUE
     -- <<FK>> na planetární systém, kde se flotila nachází
     -- <<FK>> na velitele flotily (uživatele)
 );
@@ -251,6 +255,8 @@ END;
 -- Tabulka Rozkaz (rozkazy plněný flotilou) --
 -- **************************************** --
 
+-- Poznámka k datům:
+-- Léta jsou ve formátu BBY (Před bitvou o Yavin), to znamená, že menší čislo je mladší
 -- Poznámka ke změně oporti původnímu ER diagramu:
 -- Atribut 'Popis' byl změněn (přejmenován) na 'zneni'
 CREATE TABLE Rozkaz
@@ -260,8 +266,9 @@ CREATE TABLE Rozkaz
     zneni          CLOB,
     datum_vydani   DATE,
     termin_splneni DATE,
-    CHECK (datum_vydani <= termin_splneni), -- Kontrola, že datum vydání rozkazu je před/roven termínem splnění
-    stav_rozkazu   VARCHAR2(30) CHECK (stav_rozkazu IN ('nový', 'rozpracovaný', 'splněný', 'zrušený')),
+    CHECK (datum_vydani.YEAR > termin_splneni.YEAR OR
+    (datum_vydani.YEAR == termin_splneni.YEAR AND datum_vydani <= termin_spleni)), -- Kontrola, že datum vydání rozkazu je před/roven termínem splnění
+    stav_rozkazu   VARCHAR2(30) CHECK (stav_rozkazu IN ('nový', 'rozpracovaný', 'splněný', 'selhaný', 'zrušený')),
     id_flotily     NUMBER
     -- <<FK>> na flotilu, která rozkaz plní
 );
@@ -321,6 +328,52 @@ CREATE TABLE Slozeni_planety
     -- <<FK>> na chemický prvek, který tvoří složení
 );
 
+-- Funkce pro sečtení složení planety nebo hvězdy
+CREATE OR REPLACE FUNCTION check_total_composition(
+    p_id_systemu IN NUMBER,
+    p_id_entity IN NUMBER,
+    p_entity_type IN VARCHAR2 -- 'planeta' or 'hvezda'
+) RETURN NUMBER IS
+    v_total NUMBER := 0;
+BEGIN
+    IF p_entity_type = 'planeta' THEN
+        SELECT NVL(SUM(zastoupeni_prvku), 0)
+        INTO v_total
+        FROM Slozeni_planety
+        WHERE id_systemu = p_id_systemu
+        AND id_planety = p_id_entity;
+    ELSE
+        SELECT NVL(SUM(zastoupeni_prvku), 0)
+        INTO v_total
+        FROM Slozeni_hvezdy
+        WHERE id_systemu = p_id_systemu
+        AND id_hvezdy = p_id_entity;
+    END IF;
+    
+    RETURN v_total;
+END;
+
+-- Trigger pro kontrolu, že planeta má správné složení atmosféry:
+-- Buď 0% = neznámá atmosféra nebo součet 100%
+CREATE OR REPLACE TRIGGER trg_check_planet_composition
+AFTER INSERT OR UPDATE OR DELETE ON Slozeni_planety
+FOR EACH ROW
+DECLARE
+    v_total NUMBER;
+BEGIN
+    -- Check composition for affected planet
+    v_total := check_total_composition(
+        :NEW.id_systemu, 
+        :NEW.id_planety, 
+        'planeta'
+    );
+    
+    -- Must be either 0% (no elements) or exactly 100%
+    IF v_total > 0 AND v_total != 100 THEN
+        RAISE_APPLICATION_ERROR(-20004, 
+            'Složení planety musí být buď neznámé (žádné prvky) nebo přesně 100% (aktuálně ' || v_total || '%)');
+    END IF;
+END;
 
 -- **************************************************** --
 -- Tabulka Slozeni_hvezdy (chemické složení hvězdy v %) --
@@ -338,6 +391,27 @@ CREATE TABLE Slozeni_hvezdy
     -- <<FK>> na chemický prvek, který tvoří složení
 );
 
+-- Trigger pro kontrolu, že hvězda má správné složení:
+-- Buď 0% = neznámé složení nebo součet 100%
+CREATE OR REPLACE TRIGGER trg_check_star_composition
+AFTER INSERT OR UPDATE OR DELETE ON Slozeni_hvezdy
+FOR EACH ROW
+DECLARE
+    v_total NUMBER;
+BEGIN
+    -- Check composition for affected star
+    v_total := check_total_composition(
+        :NEW.id_systemu, 
+        :NEW.id_hvezdy, 
+        'hvezda'
+    );
+    
+    -- Must be either 0% (no elements) or exactly 100%
+    IF v_total > 0 AND v_total != 100 THEN
+        RAISE_APPLICATION_ERROR(-20005, 
+            'Složení hvězdy musí být buď neznámé (žádné prvky) nebo přesně 100% (aktuálně ' || v_total || '%)');
+    END IF;
+END;
 
 -- ************************* --
 -- Přidání cizích klíčů (FK) --
@@ -505,6 +579,7 @@ INSERT INTO Planetarni_system (id_systemu, nazev_systemu)
 VALUES (seq_system_id.NEXTVAL, 'Dagobah');
 
 -- Vkládání dat do tabulky Hvezda (hvězdy patřící do příslušných systémů)
+----- Systém 'Tatoo' -----
 INSERT INTO Hvezda (id_hvezdy, id_systemu, nazev_hvezdy, typ_hvezdy)
 VALUES (seq_hvezda_id.NEXTVAL,
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
@@ -513,34 +588,57 @@ VALUES (seq_hvezda_id.NEXTVAL,
 
 INSERT INTO Hvezda (id_hvezdy, id_systemu, nazev_hvezdy, typ_hvezdy)
 VALUES (seq_hvezda_id.NEXTVAL,
-        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        'Naboo Sun',
+        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        'Tatoo II',
         'žlutý trpaslík');
 
+----- Systém 'Naboo' -----
+INSERT INTO Hvezda (id_hvezdy, id_systemu, nazev_hvezdy, typ_hvezdy)
+VALUES (seq_hvezda_id.NEXTVAL,
+        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
+        'Naboo',
+        'žlutý trpaslík');
+
+----- Systém 'Coruscant' -----
 INSERT INTO Hvezda (id_hvezdy, id_systemu, nazev_hvezdy, typ_hvezdy)
 VALUES (seq_hvezda_id.NEXTVAL,
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         'Coruscant Prime',
         'modrý obr');
 
+----- Systém 'Hoth' -----
 INSERT INTO Hvezda (id_hvezdy, id_systemu, nazev_hvezdy, typ_hvezdy)
 VALUES (seq_hvezda_id.NEXTVAL,
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
-        'Hoth Star',
-        'červený obr');
+        'Hoth',
+        'modrý obr');
 
+----- Systém 'Dagobah' -----
 INSERT INTO Hvezda (id_hvezdy, id_systemu, nazev_hvezdy, typ_hvezdy)
 VALUES (seq_hvezda_id.NEXTVAL,
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
-        'Dagobah Star',
-        'červený trpaslík');
+        'Darlo',
+        'bílý trpaslík');
 
 -- Vkládání dat do tabulky Planeta (planety v jednotlivých systémech)
+----- Systém 'Tatoo' -----
 INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
         seq_planeta_id.NEXTVAL,
         'Tatooine',
         'terestrická');
+
+INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        seq_planeta_id.NEXTVAL,
+        'Ohann',
+        'plynný obr');
+
+INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        seq_planeta_id.NEXTVAL,
+        'Adriana',
+        'plynný obr');
 
 ----- Systém 'Naboo' -----
 INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
@@ -549,30 +647,12 @@ VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')
         'Naboo',
         'terestrická');
 
-INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        seq_planeta_id.NEXTVAL,
-        'Remine',
-        'plynný obr');
-
-INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        seq_planeta_id.NEXTVAL,
-        'Bippa',
-        'trpasličí planeta');
-
 ----- Systém 'Coruscant' -----
 INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         seq_planeta_id.NEXTVAL,
         'Coruscant',
         'terestrická');
-
-INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
-        seq_planeta_id.NEXTVAL,
-        'Sankar',
-        'exoplaneta');
 
 ----- Systém 'Hoth' -----
 INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
@@ -584,8 +664,8 @@ VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
 INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
         seq_planeta_id.NEXTVAL,
-        'Hoth II',
-        'terestrická');
+        'Jhas',
+        'plynný obr');
 
 ----- Systém 'Dagobah' -----
 INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
@@ -594,47 +674,31 @@ VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah
         'Dagobah',
         'terestrická');
 
-INSERT INTO Planeta (id_systemu, id_planety, nazev_planety, typ_planety)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
-        seq_planeta_id.NEXTVAL,
-        'Bogden',
-        'exoplaneta');
-
 -- Vkládání dat do tabulky Chemicky_prvek (chemické prvky)
 INSERT INTO Chemicky_prvek (id_prvku, nazev_prvku, znacka_prvku)
 VALUES (seq_prvek_id.NEXTVAL, 'Vodík', 'H');
 
 INSERT INTO Chemicky_prvek (id_prvku, nazev_prvku, znacka_prvku)
-VALUES (seq_prvek_id.NEXTVAL, 'Helium', 'He');
+VALUES (seq_prvek_id.NEXTVAL, 'Hélium', 'He');
 
 INSERT INTO Chemicky_prvek (id_prvku, nazev_prvku, znacka_prvku)
-VALUES (seq_prvek_id.NEXTVAL, 'Carbon', 'C');
+VALUES (seq_prvek_id.NEXTVAL, 'Uhlík', 'C');
 
 INSERT INTO Chemicky_prvek (id_prvku, nazev_prvku, znacka_prvku)
-VALUES (seq_prvek_id.NEXTVAL, 'Oxygen', 'O');
+VALUES (seq_prvek_id.NEXTVAL, 'Kyslík', 'O');
 
 INSERT INTO Chemicky_prvek (id_prvku, nazev_prvku, znacka_prvku)
-VALUES (seq_prvek_id.NEXTVAL, 'Nitrogen', 'N');
+VALUES (seq_prvek_id.NEXTVAL, 'Dusík', 'N');
 
 INSERT INTO Chemicky_prvek (id_prvku, nazev_prvku, znacka_prvku)
-VALUES (seq_prvek_id.NEXTVAL, 'Iron', 'Fe');
+VALUES (seq_prvek_id.NEXTVAL, 'Železo', 'Fe');
 
 INSERT INTO Chemicky_prvek (id_prvku, nazev_prvku, znacka_prvku)
-VALUES (seq_prvek_id.NEXTVAL, 'Aluminum', 'Al');
+VALUES (seq_prvek_id.NEXTVAL, 'Hliník', 'Al');
 
--- Vkládání složení planety 'Tatooine'
-INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
-        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Vodík'),
-        74.20000);
-INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
-        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Helium'),
-        24.30000);
 
--- Vkládání složení hvězdy 'Tatoo I'
+-- Vkládání dat do tabulky Slozeni_hvezdy (chemické složení hvězd)
+----- Hvězda 'Tatoo I' -----
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
         (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Tatoo I'),
@@ -643,82 +707,127 @@ VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo')
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
         (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Tatoo I'),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Helium'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Hélium'),
         9.80000);
 
--- Vkládání složení hvězdy 'Naboo Sun' (88 % H, 10 % He, 2 % Fe)
+----- Hvězda 'Tatoo II' -----
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Naboo Sun'),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
-        88.0);
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Tatoo II'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Vodík'),
+        89.10000);
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Naboo Sun'),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'He'),
-        10.0);
-INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Naboo Sun'),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'Fe'),
-        2.0);
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Tatoo II'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Hélium'),
+        10.90000);
 
--- Vkládání složení hvězdy 'Coruscant Prime' (70 % H, 25 % He, 5 % C)
+----- Hvězda 'Naboo' -----
+INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Naboo'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
+        88.00000);
+INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Naboo'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'He'),
+        10.00000);
+INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Naboo'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'Fe'),
+        2.00000);
+
+----- Hvězda 'Coruscant Prime' -----
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Coruscant Prime'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
-        70.0);
+        70.00000);
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Coruscant Prime'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'He'),
-        25.0);
+        25.00000);
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Coruscant Prime'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'C'),
-        5.0);
+        5.00000);
 
--- Vkládání složení hvězdy 'Hoth Star' (92 % H, 7 % He, 1 % O)
+----- Hvězda 'Hoth' -----
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
-        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Hoth Star'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Hoth'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
-        92.0);
+        92.00000);
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
-        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Hoth Star'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Hoth'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'He'),
-        7.0);
+        7.00000);
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
-        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Hoth Star'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Hoth'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'O'),
-        1.0);
+        1.00000);
 
--- Vkládání složení hvězdy 'Dagobah Star' (60 % H, 35 % He, 5 % N)
+----- Hvězda 'Darlo' -----
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
-        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Dagobah Star'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Darlo'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
-        60.0);
+        60.00000);
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
-        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Dagobah Star'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Darlo'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'He'),
-        35.0);
+        35.00000);
 INSERT INTO Slozeni_hvezdy (id_systemu, id_hvezdy, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
-        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Dagobah Star'),
+        (SELECT id_hvezdy FROM Hvezda WHERE nazev_hvezdy = 'Darlo'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'N'),
-        5.0);
+        5.00000);
 
--- ***********************
--- Vkládání složení nových planet (každá planeta má alespoň 2 prvky)
--- ***********************
+-- Vkládání dat do tabulky Slozeni_planety (chemické složení atmosféry planet)
+----- Planeta 'Tatooine' -----
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Dusík'),
+        74.20000);
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Kyslík'),
+        25.80000);
 
--- Pro planetu 'Naboo' – příklad: 20 % Vodík, 10 % Oxygen
+----- Planeta 'Ohann' -----
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Ohann'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Vodík'),
+        80.00000);
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Ohann'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Hélium'),
+        20.00000);
+
+----- Planeta 'Adriana' -----
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Adriana'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Vodík'),
+        60.65000);
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Adriana'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE nazev_prvku = 'Hélium'),
+        39.35000);
+
+----- Planeta 'Naboo' -----
 INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
         (SELECT id_planety
@@ -726,7 +835,15 @@ VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')
          WHERE nazev_planety = 'Naboo'
            AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
-        20.0);
+        20.00000);
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
+        (SELECT id_planety
+         FROM Planeta
+         WHERE nazev_planety = 'Naboo'
+           AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'N'),
+        65.00000);
 INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
         (SELECT id_planety
@@ -734,88 +851,79 @@ VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')
          WHERE nazev_planety = 'Naboo'
            AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'O'),
-        10.0);
+        15.00000);
 
--- Pro planetu 'Remine' – příklad: 40 % Nitrogen, 5 % Aluminum
-INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        (SELECT id_planety
-         FROM Planeta
-         WHERE nazev_planety = 'Remine'
-           AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'N'),
-        40.0);
-INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        (SELECT id_planety
-         FROM Planeta
-         WHERE nazev_planety = 'Remine'
-           AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'Al'),
-        5.0);
-
--- Pro planetu 'Bippa' – příklad: 12 % Carbon, 3 % Iron
-INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        (SELECT id_planety
-         FROM Planeta
-         WHERE nazev_planety = 'Bippa'
-           AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'C'),
-        12.0);
-INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
-VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        (SELECT id_planety
-         FROM Planeta
-         WHERE nazev_planety = 'Bippa'
-           AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'Fe'),
-        3.0);
-
--- Pro planetu 'Coruscant' – příklad: 25 % Carbon, 10 % Oxygen
+----- Planeta 'Coruscant' -----
 INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'C'),
-        25.0);
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
+        21.00000);
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'N'),
+        67.00000);
 INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'O'),
-        10.0);
+        12.00000);
 
--- Pro planetu 'Hoth' – příklad: 30 % Nitrogen, 2 % Iron
+----- Planeta 'Hoth' -----
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Hoth'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
+        15.00000);
 INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Hoth'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'N'),
-        30.0);
+        69.00000);
 INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Hoth'),
-        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'Fe'),
-        2.0);
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'O'),
+        16.00000);
 
--- ***********************
--- Vkládání dat do tabulky Uzivatel (uživatelé - jedi a imperátor)
--- ***********************
+----- Planeta 'Dagobah' -----
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Dagobah'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
+        19.50000);
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Dagobah'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'N'),
+        60.10000);
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Dagobah'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'O'),
+        20.40000);
+
+-- Vkládání dat do tabulky Uzivatel
+----- Rytíř 'Obi-Wan Kenobi' -----
 INSERT INTO Uzivatel (id_uzivatele, jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele, rasa, mnozstvi_midichlorianu,
                       narozeniny, lod_kde_se_nachazi, planetarni_system_narozeni, planeta_narozeni)
 VALUES (seq_uzivatel_id.NEXTVAL,
         'Obi-Wan', 'Kenobi',
-        'jedi', 'rytir',
+        'jedi', 'velitel',
         'člověk',
         13400,
         TO_DATE('57-03-11', 'YY-MM-DD'),
         NULL,
-        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
-        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'));
+        NULL,
+        NULL);
 
+----- Velitel 'Mace Windu' -----
 INSERT INTO Uzivatel (id_uzivatele, jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele, rasa, mnozstvi_midichlorianu,
                       narozeniny, lod_kde_se_nachazi, planetarni_system_narozeni, planeta_narozeni)
 VALUES (seq_uzivatel_id.NEXTVAL,
         'Mace', 'Windu',
-        'jedi', 'velitel',
+        'jedi', 'rytíř',
         'člověk',
         15000,
         TO_DATE('72-05-01', 'YY-MM-DD'),
@@ -823,6 +931,7 @@ VALUES (seq_uzivatel_id.NEXTVAL,
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'));
 
+----- Imperátor 'Palpatine' -----
 INSERT INTO Uzivatel (id_uzivatele, jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele, rasa, mnozstvi_midichlorianu,
                       narozeniny, lod_kde_se_nachazi, planetarni_system_narozeni, planeta_narozeni)
 VALUES (seq_uzivatel_id.NEXTVAL,
@@ -830,16 +939,16 @@ VALUES (seq_uzivatel_id.NEXTVAL,
         'imperator', NULL,
         'člověk',
         NULL,
-        TO_DATE('82-01-01', 'YY-MM-DD'),
+        TO_DATE('84-01-01', 'YY-MM-DD'),
         NULL,
-        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
-        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'));
+        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Naboo'));
 
--- Vkládání dat pro Lukea Skywalkera (jedi rytir) – loď bude později nastavena
+----- Rytíř 'Luke Skywalker' -----
 INSERT INTO Uzivatel (jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele, rasa, mnozstvi_midichlorianu,
                       narozeniny, lod_kde_se_nachazi, planetarni_system_narozeni, planeta_narozeni)
 VALUES ('Luke', 'Skywalker',
-        'jedi', 'rytir',
+        'jedi', 'rytíř',
         'člověk',
         15000,
         TO_DATE('19-05-04', 'YY-MM-DD'),
@@ -847,153 +956,164 @@ VALUES ('Luke', 'Skywalker',
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'));
 
--- Vkládání dat pro Yodu (jedi velitel)
+----- Velitel 'Yoda' -----
 INSERT INTO Uzivatel (jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele, rasa, mnozstvi_midichlorianu,
                       narozeniny, lod_kde_se_nachazi, planetarni_system_narozeni, planeta_narozeni)
 VALUES ('Minch', 'Yoda',
         'jedi', 'velitel',
         'neznámá',
         18000,
-        TO_DATE('80-01-01', 'YY-MM-DD'),
-        NULL, -- Momentálně není přiřazena žádná loď
-        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
-        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Dagobah'));
+        TO_DATE('896-10-02', 'YY-MM-DD'),
+        NULL,
+        NULL,
+        NULL);
 
--- Vkládání dat pro Anakina Skywalkera (jedi rytir)
+----- Rytíř 'Anakin Skywalker' -----
 INSERT INTO Uzivatel (jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele, rasa, mnozstvi_midichlorianu,
                       narozeniny, lod_kde_se_nachazi, planetarni_system_narozeni, planeta_narozeni)
 VALUES ('Anakin', 'Skywalker',
-        'jedi', 'rytir',
+        'jedi', 'rytíř',
         'člověk',
-        20000,
+        25000,
         TO_DATE('41-01-01', 'YY-MM-DD'),
         NULL,
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'));
 
--- Vkládání dat pro Darth Vadera (jedi rytir, zde uvádíme i speciální rasu)
+----- Rytíř 'Darth Vader' -----
 INSERT INTO Uzivatel (jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele, rasa, mnozstvi_midichlorianu,
                       narozeniny, lod_kde_se_nachazi, planetarni_system_narozeni, planeta_narozeni)
 VALUES ('Darth', 'Vader',
-        'jedi', 'rytir',
+        'jedi', 'velitel',
         'kyborg',
-        NULL,
+        25000,
         TO_DATE('41-01-01', 'YY-MM-DD'),
         NULL,
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'));
 
--- ***********************
--- Vkládání dat do tabulky Flotila (flotily)
--- ***********************
-
--- Vkládání flotily 'Naboo Defense Fleet' s dočasným velitelským uživatelem (Mace Windu)
+-- Vkládání dat do tabulky Flotila
+----- Flotila 'Nejvyšší Řád' -----
 INSERT INTO Flotila (id_flotily, nazev_flotily, id_systemu, id_planety, id_velitele)
 VALUES (seq_flotily_id.NEXTVAL,
-        'Naboo Defense Fleet',
+        'Nejvyšší Řád',
+        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_planety
+         FROM Planeta
+         WHERE nazev_planety = 'Tatooine'
+           AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo')),
+        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Darth' AND prijmeni = 'Vader'));
+
+----- Flotila 'Otevřený Kruh' -----
+INSERT INTO Flotila (id_flotily, nazev_flotily, id_systemu, id_planety, id_velitele)
+VALUES (seq_flotily_id.NEXTVAL,
+        'Otevřený Kruh',
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
         (SELECT id_planety
          FROM Planeta
          WHERE nazev_planety = 'Naboo'
            AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo')),
-        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Mace' AND prijmeni = 'Windu'));
+        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Obi-Wan' AND prijmeni = 'Kenobi'));
 
--- Vkládání flotily 'Coruscant Home Fleet'
+----- Flotila 'Námořnictvo Aliance Rebelů' -----
 INSERT INTO Flotila (id_flotily, nazev_flotily, id_systemu, id_planety, id_velitele)
 VALUES (seq_flotily_id.NEXTVAL,
-        'Coruscant Home Fleet',
-        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
-        (SELECT id_planety
-         FROM Planeta
-         WHERE nazev_planety = 'Coruscant'
-           AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant')),
-        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Mace' AND prijmeni = 'Windu'));
-
--- Vkládání flotily 'Hoth Invasion Fleet'
-INSERT INTO Flotila (id_flotily, nazev_flotily, id_systemu, id_planety, id_velitele)
-VALUES (seq_flotily_id.NEXTVAL,
-        'Hoth Invasion Fleet',
+        'Námořnictvo Aliance Rebelů',
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
         (SELECT id_planety
          FROM Planeta
          WHERE nazev_planety = 'Hoth'
            AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth')),
-        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Mace' AND prijmeni = 'Windu'));
+        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Minch' AND prijmeni = 'Yoda'));
 
--- ***********************
--- Vkládání dat do tabulky Lod (lodě)
--- ***********************
-
--- Vkládání lodí do flotily 'Naboo Defense Fleet'
+-- Vkládání dat do tabulky Lod
+----- Lodě flotily 'Nejvyšší Řád' -----
 INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
 VALUES (seq_lode_id.NEXTVAL,
-        'Theed Guardian',
-        'korveta',
-        'nová',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Naboo Defense Fleet'),
-        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
-        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Naboo'));
-
-INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
-VALUES (seq_lode_id.NEXTVAL,
-        'Royal Cruiser',
-        'křižník',
+        'Hvězdný destruktor třídy Imperial I - 0001',
+        'hvězdný destruktor',
         'používaná',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Naboo Defense Fleet'),
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Nejvyšší Řád'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Naboo'));
 
--- Vkládání lodí do flotily 'Coruscant Home Fleet'
 INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
 VALUES (seq_lode_id.NEXTVAL,
-        'Defender One',
-        'stíhačka',
-        'nová',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Coruscant Home Fleet'),
+        'Hvězdný destruktor třídy Imperial I - 0002',
+        'hvězdný destruktor',
+        'používaná',
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Nejvyšší Řád'),
+        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Naboo'));
+
+INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
+VALUES (seq_lode_id.NEXTVAL,
+        'Hvězdný destruktor třídy Imperial I - 0003',
+        'hvězdný destruktor',
+        'používaná',
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Nejvyšší Řád'),
+        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Naboo'));
+
+----- Lodě flotily 'Otevřený Kruh' -----
+INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
+VALUES (seq_lode_id.NEXTVAL,
+        'Vlajková loď Anakina Skywalkera',
+        'hvězdný destruktor',
+        'používaná',
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'));
 
 INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
 VALUES (seq_lode_id.NEXTVAL,
-        'Pride of Coruscant',
+        'Hvězdný destruktor třídy Venator - 0002',
+        'hvězdný destruktor',
+        'používaná',
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'),
+        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'));
+
+INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
+VALUES (seq_lode_id.NEXTVAL,
+        'Pýcha Corusantu',
         'bitevní loď',
         'používaná',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Coruscant Home Fleet'),
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'));
 
--- Vkládání lodí do flotily 'Hoth Invasion Fleet'
+----- Lodě flotily 'Námořnictvo Aliance Rebelů' -----
 INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
 VALUES (seq_lode_id.NEXTVAL,
-        'Snowpiercer',
+        'Auric',
         'transportní loď',
         'nová',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Hoth Invasion Fleet'),
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Námořnictvo Aliance Rebelů'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Hoth'));
 
 INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
 VALUES (seq_lode_id.NEXTVAL,
-        'Frost Blade',
+        'Ledová Čepel',
         'fregata',
         'používaná',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Hoth Invasion Fleet'),
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Námořnictvo Aliance Rebelů'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Hoth'));
 
--- Bonus: Vytvoření slavné "Millennium Falcon" – loď bez přiřazené flotily, kotví na Coruscantu
+----- Bez flotily 'Millennium Falcon' -----
 INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_systemu, id_planety)
 VALUES (seq_lode_id.NEXTVAL,
         'Millennium Falcon',
         'nákladní loď',
         'používaná',
-        NULL, -- Není přiřazena žádná flotila
-        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
-        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'));
+        NULL,
+        (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Tatooine'));
 
--- ***********************
--- Vkládání dat do tabulky Svetelny_mec (světelné meče)
--- ***********************
+-- Vkládání dat do tabulky Svetelny_mec
+
 INSERT INTO Svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
 VALUES (seq_mece_id.NEXTVAL,
         'Zelený hněv',
@@ -1004,7 +1124,7 @@ VALUES (seq_mece_id.NEXTVAL,
 
 INSERT INTO Svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
 VALUES (seq_mece_id.NEXTVAL,
-        'Skywalker Legacy',
+        'Odkaz Skywalkera',
         'klasický',
         'modrá',
         'lehce opotřebený',
@@ -1012,7 +1132,7 @@ VALUES (seq_mece_id.NEXTVAL,
 
 INSERT INTO Svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
 VALUES (seq_mece_id.NEXTVAL,
-        'Ataru Spark',
+        'Jisrka Ataru ',
         'krátký',
         'zelená',
         'lehce opotřebený',
@@ -1020,112 +1140,84 @@ VALUES (seq_mece_id.NEXTVAL,
 
 INSERT INTO Svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
 VALUES (seq_mece_id.NEXTVAL,
-        'Chosen One Blade',
+        'Ostří vyvoleného',
         'klasický',
         'modrá',
         'opotřebený',
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Anakin' AND prijmeni = 'Skywalker'));
 
-INSERT INTO Svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
-VALUES (seq_mece_id.NEXTVAL,
-        'Hope Shard',
-        'klasický',
-        'zelená',
-        'nový',
-        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Leia' AND prijmeni = 'Organa'));
-
--- ***********************
--- Vkládání dat do tabulky Padawan (vztahy mezi mistry a padawany)
--- ***********************
+-- Vkládání dat do tabulky Padawan
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
 VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Mace' AND prijmeni = 'Windu'),
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Obi-Wan' AND prijmeni = 'Kenobi'),
-        TO_DATE('50-01-01', 'YY-MM-DD'),
-        TO_DATE('55-01-01', 'YY-MM-DD'));
+        TO_DATE('50-02-07', 'YY-MM-DD'),
+        TO_DATE('39-03-04', 'YY-MM-DD'));
 
--- Vztah mezi Obi-Wanem a Anakinem
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
 VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Obi-Wan' AND prijmeni = 'Kenobi'),
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Anakin' AND prijmeni = 'Skywalker'),
-        TO_DATE('52-01-01', 'YY-MM-DD'),
-        TO_DATE('57-01-01', 'YY-MM-DD'));
+        TO_DATE('35-01-01', 'YY-MM-DD'),
+        TO_DATE('26-10-05', 'YY-MM-DD'));
 
--- Vztah mezi Yodou a Lukem
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
 VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Minch' AND prijmeni = 'Yoda'),
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Luke' AND prijmeni = 'Skywalker'),
-        TO_DATE('19-05-05', 'YY-MM-DD'),
-        TO_DATE('21-05-05', 'YY-MM-DD'));
+        TO_DATE('12-05-05', 'YY-MM-DD'),
+        TO_DATE('10-05-05', 'YY-MM-DD'));
 
--- Vztah mezi Mace Winduem a Yodou (jen ukázka)
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
-VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Mace' AND prijmeni = 'Windu'),
-        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Minch' AND prijmeni = 'Yoda'),
-        TO_DATE('54-01-01', 'YY-MM-DD'),
-        TO_DATE('56-01-01', 'YY-MM-DD'));
+VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Minch' AND prijmeni = 'Yoda'),
+        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Mace' AND prijmeni = 'Windu'),
+        TO_DATE('64-02-01', 'YY-MM-DD'),
+        TO_DATE('52-01-03', 'YY-MM-DD'));
 
--- ***********************
--- Vkládání dat do tabulky Rozkaz (rozkazy pro flotily)
--- ***********************
-
--- Rozkaz pro 'Naboo Defense Fleet'
-INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni, stav_rozkazu, id_flotily)
-VALUES (seq_rozkazy_id.NEXTVAL,
-        'obranný',
-        'Chraňte hlavní město Theed proti možnému útoku.',
-        TO_DATE('25-03-01', 'YY-MM-DD'),
-        TO_DATE('25-03-10', 'YY-MM-DD'),
-        'nový',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Naboo Defense Fleet'));
-
--- Rozkaz pro 'Naboo Defense Fleet' (průzkumný)
-INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni, stav_rozkazu, id_flotily)
-VALUES (seq_rozkazy_id.NEXTVAL,
-        'průzkumný',
-        'Prozkoumat okolní sektory a hlásit nepřátelskou aktivitu.',
-        TO_DATE('25-03-02', 'YY-MM-DD'),
-        TO_DATE('25-03-15', 'YY-MM-DD'),
-        'rozpracovaný',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Naboo Defense Fleet'));
-
--- Rozkaz pro 'Coruscant Home Fleet' (obléhací)
+-- Vkládání dat do tabulky Rozkaz
+----- Rozkaz flotily 'Nejvyšší Řád' -----
 INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni, stav_rozkazu, id_flotily)
 VALUES (seq_rozkazy_id.NEXTVAL,
         'obléhací',
-        'Zajistit ochranný perimetr kolem Coruscantu.',
-        TO_DATE('25-04-01', 'YY-MM-DD'),
-        TO_DATE('25-05-01', 'YY-MM-DD'),
+        'Zajistěte perimetr pro obléhání planety Tatooine.',
+        TO_DATE('25-03-11', 'YY-MM-DD'),
+        NULL,
         'nový',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Coruscant Home Fleet'));
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Nejvyšší Řád'));
 
--- Rozkaz pro 'Coruscant Home Fleet' (evakuační)
+----- Rozkazy flotily 'Otevřený Kruh' -----
 INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni, stav_rozkazu, id_flotily)
 VALUES (seq_rozkazy_id.NEXTVAL,
-        'evakuační',
-        'Evakuovat civilisty z ohrožených sektorů',
-        TO_DATE('25-04-10', 'YY-MM-DD'),
-        TO_DATE('25-04-20', 'YY-MM-DD'),
-        'rozpracovaný',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Coruscant Home Fleet'));
+        'obranný',
+        'Chraňte hlavní město proti možnému útoku povstalců.',
+        TO_DATE('25-03-01', 'YY-MM-DD'),
+        TO_DATE('25-03-10', 'YY-MM-DD'),
+        'splněný',
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'));
 
--- Rozkaz pro 'Hoth Invasion Fleet' (invazní)
+INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni, stav_rozkazu, id_flotily)
+VALUES (seq_rozkazy_id.NEXTVAL,
+        'průzkumný',
+        'Prozkoumejte oblast sektoru Chommell a hlaste aktivitu povstalců.',
+        TO_DATE('25-02-20', 'YY-MM-DD'),
+        NULL,
+        'rozpracovaný',
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'));
+
+----- Rozkazy flotily 'Námořnictvo Aliance Rebelů' -----
 INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni, stav_rozkazu, id_flotily)
 VALUES (seq_rozkazy_id.NEXTVAL,
         'invazní',
-        'Zaútočit na ledové pevnosti na povrchu planety Hoth.',
-        TO_DATE('25-06-01', 'YY-MM-DD'),
-        TO_DATE('25-06-15', 'YY-MM-DD'),
-        'nový',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Hoth Invasion Fleet'));
+        'Zaútočte na hlavní město a osvoboďte ho od nadvády Impéria.',
+        TO_DATE('25-02-30', 'YY-MM-DD'),
+        TO_DATE('25-03-09', 'YY-MM-DD'),
+        'selhaný',
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Námořnictvo Aliance Rebelů'));
 
--- Rozkaz pro 'Hoth Invasion Fleet' (zásobovací)
 INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni, stav_rozkazu, id_flotily)
 VALUES (seq_rozkazy_id.NEXTVAL,
-        'zásobovací',
-        'Dodat zásoby pro pozemní jednotky.',
-        TO_DATE('25-06-02', 'YY-MM-DD'),
-        TO_DATE('25-06-20', 'YY-MM-DD'),
+        'evakuační',
+        'Evakuujte vojáky a civilisty z oblasti.',
+        TO_DATE('25-03-09', 'YY-MM-DD'),
+        NULL,
         'rozpracovaný',
-        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Hoth Invasion Fleet'));
+        (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Námořnictvo Aliance Rebelů'));
 
 -- konec souboru --
