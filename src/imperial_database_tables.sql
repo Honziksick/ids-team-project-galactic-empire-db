@@ -95,6 +95,7 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20001, 'subtyp_uzivatele musí být NULL pro typ_uzivatele "imperator".');
     END IF;
 END;
+/
 -- Poznámka: V Oracle databázích je rozsah chybových kódů pro uživatelem definované
 --           chyby od -20000 do -20999.
 
@@ -112,8 +113,8 @@ CREATE TABLE Padawan
     padawanem_od DATE,
     padawanem_do DATE,
     PRIMARY KEY (id_mistra, id_padawana), -- Unární vztah má složený primární klíč
-    CHECK (datum_vydani.YEAR > termin_splneni.YEAR OR
-    (datum_vydani.YEAR == termin_splneni.YEAR AND datum_vydani <= termin_spleni)), -- Kontrola, že datum začátku je před datem konce
+    CHECK (EXTRACT(YEAR FROM padawanem_od) > EXTRACT(YEAR FROM padawanem_do) OR
+    (EXTRACT(YEAR FROM padawanem_od) = EXTRACT(YEAR FROM padawanem_do) AND padawanem_od <= padawanem_do)) -- Kontrola, že datum začátku je před datem konce
     -- <<FK>> na mistra (uživatele)
     -- <<FK>> na padawana (uživatele)
 );
@@ -149,7 +150,7 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20002, 'id_padawana musí mít typ_uzivatele "jedi".');
     END IF;
 END;
-
+/
 
 -- ***************************************** --
 -- Tabulka Svetelny_mec (světelné meče jedi) --
@@ -249,7 +250,7 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20001, 'id_velitele musí mít subtyp_uzivatele "velitel".');
     END IF;
 END;
-
+/
 
 -- **************************************** --
 -- Tabulka Rozkaz (rozkazy plněný flotilou) --
@@ -266,8 +267,8 @@ CREATE TABLE Rozkaz
     zneni          CLOB,
     datum_vydani   DATE,
     termin_splneni DATE,
-    CHECK (datum_vydani.YEAR > termin_splneni.YEAR OR
-    (datum_vydani.YEAR == termin_splneni.YEAR AND datum_vydani <= termin_spleni)), -- Kontrola, že datum vydání rozkazu je před/roven termínem splnění
+    CHECK (EXTRACT(YEAR FROM datum_vydani) > EXTRACT(YEAR FROM termin_splneni) OR
+    (EXTRACT(YEAR FROM datum_vydani) = EXTRACT(YEAR FROM termin_splneni) AND datum_vydani <= termin_splneni)), -- Kontrola, že datum vydání rozkazu je před/roven termínem splnění
     stav_rozkazu   VARCHAR2(30) CHECK (stav_rozkazu IN ('nový', 'rozpracovaný', 'splněný', 'selhaný', 'zrušený')),
     id_flotily     NUMBER
     -- <<FK>> na flotilu, která rozkaz plní
@@ -328,53 +329,6 @@ CREATE TABLE Slozeni_planety
     -- <<FK>> na chemický prvek, který tvoří složení
 );
 
--- Funkce pro sečtení složení planety nebo hvězdy
-CREATE OR REPLACE FUNCTION check_total_composition(
-    p_id_systemu IN NUMBER,
-    p_id_entity IN NUMBER,
-    p_entity_type IN VARCHAR2 -- 'planeta' or 'hvezda'
-) RETURN NUMBER IS
-    v_total NUMBER := 0;
-BEGIN
-    IF p_entity_type = 'planeta' THEN
-        SELECT NVL(SUM(zastoupeni_prvku), 0)
-        INTO v_total
-        FROM Slozeni_planety
-        WHERE id_systemu = p_id_systemu
-        AND id_planety = p_id_entity;
-    ELSE
-        SELECT NVL(SUM(zastoupeni_prvku), 0)
-        INTO v_total
-        FROM Slozeni_hvezdy
-        WHERE id_systemu = p_id_systemu
-        AND id_hvezdy = p_id_entity;
-    END IF;
-    
-    RETURN v_total;
-END;
-
--- Trigger pro kontrolu, že planeta má správné složení atmosféry:
--- Buď 0% = neznámá atmosféra nebo součet 100%
-CREATE OR REPLACE TRIGGER trg_check_planet_composition
-AFTER INSERT OR UPDATE OR DELETE ON Slozeni_planety
-FOR EACH ROW
-DECLARE
-    v_total NUMBER;
-BEGIN
-    -- Check composition for affected planet
-    v_total := check_total_composition(
-        :NEW.id_systemu, 
-        :NEW.id_planety, 
-        'planeta'
-    );
-    
-    -- Must be either 0% (no elements) or exactly 100%
-    IF v_total > 0 AND v_total != 100 THEN
-        RAISE_APPLICATION_ERROR(-20004, 
-            'Složení planety musí být buď neznámé (žádné prvky) nebo přesně 100% (aktuálně ' || v_total || '%)');
-    END IF;
-END;
-
 -- **************************************************** --
 -- Tabulka Slozeni_hvezdy (chemické složení hvězdy v %) --
 -- **************************************************** --
@@ -390,28 +344,6 @@ CREATE TABLE Slozeni_hvezdy
     -- <<FK>> na hvězdu
     -- <<FK>> na chemický prvek, který tvoří složení
 );
-
--- Trigger pro kontrolu, že hvězda má správné složení:
--- Buď 0% = neznámé složení nebo součet 100%
-CREATE OR REPLACE TRIGGER trg_check_star_composition
-AFTER INSERT OR UPDATE OR DELETE ON Slozeni_hvezdy
-FOR EACH ROW
-DECLARE
-    v_total NUMBER;
-BEGIN
-    -- Check composition for affected star
-    v_total := check_total_composition(
-        :NEW.id_systemu, 
-        :NEW.id_hvezdy, 
-        'hvezda'
-    );
-    
-    -- Must be either 0% (no elements) or exactly 100%
-    IF v_total > 0 AND v_total != 100 THEN
-        RAISE_APPLICATION_ERROR(-20005, 
-            'Složení hvězdy musí být buď neznámé (žádné prvky) nebo přesně 100% (aktuálně ' || v_total || '%)');
-    END IF;
-END;
 
 -- ************************* --
 -- Přidání cizích klíčů (FK) --
@@ -484,6 +416,7 @@ CREATE OR REPLACE TRIGGER trg_uzivatel_id
 BEGIN
     :NEW.id_uzivatele := seq_uzivatel_id.NEXTVAL;
 END;
+/
 
 -- Trigger pro tabulku Svetelny_mec (id_mece)
 CREATE OR REPLACE TRIGGER trg_mece_id
@@ -493,6 +426,7 @@ CREATE OR REPLACE TRIGGER trg_mece_id
 BEGIN
     :NEW.id_mece := seq_mece_id.NEXTVAL;
 END;
+/
 
 -- Trigger pro tabulku Flotila (id_flotily)
 CREATE OR REPLACE TRIGGER trg_flotily_id
@@ -502,6 +436,7 @@ CREATE OR REPLACE TRIGGER trg_flotily_id
 BEGIN
     :NEW.id_flotily := seq_flotily_id.NEXTVAL;
 END;
+/
 
 -- Trigger pro tabulku Lod (id_lode)
 CREATE OR REPLACE TRIGGER trg_lode_id
@@ -511,6 +446,7 @@ CREATE OR REPLACE TRIGGER trg_lode_id
 BEGIN
     :NEW.id_lode := seq_lode_id.NEXTVAL;
 END;
+/
 
 -- Trigger pro tabulku Rozkaz (id_rozkazu)
 CREATE OR REPLACE TRIGGER trg_rozkazy_id
@@ -520,6 +456,7 @@ CREATE OR REPLACE TRIGGER trg_rozkazy_id
 BEGIN
     :NEW.id_rozkazu := seq_rozkazy_id.NEXTVAL;
 END;
+/
 
 -- Trigger pro tabulku Planetarni_system (id_systemu)
 CREATE OR REPLACE TRIGGER trg_system_id
@@ -529,6 +466,7 @@ CREATE OR REPLACE TRIGGER trg_system_id
 BEGIN
     :NEW.id_systemu := seq_system_id.NEXTVAL;
 END;
+/
 
 -- Trigger pro tabulku Planeta (id_planety)
 CREATE OR REPLACE TRIGGER trg_planeta_id
@@ -538,6 +476,7 @@ CREATE OR REPLACE TRIGGER trg_planeta_id
 BEGIN
     :NEW.id_planety := seq_planeta_id.NEXTVAL;
 END;
+/
 
 -- Trigger pro tabulku Hvezda (id_hvezdy)
 CREATE OR REPLACE TRIGGER trg_hvezda_id
@@ -547,6 +486,7 @@ CREATE OR REPLACE TRIGGER trg_hvezda_id
 BEGIN
     :NEW.id_hvezdy := seq_hvezda_id.NEXTVAL;
 END;
+/
 
 -- Trigger pro tabulku Chemicky_prvek (id_prvku)
 CREATE OR REPLACE TRIGGER trg_prvek_id
@@ -556,7 +496,7 @@ CREATE OR REPLACE TRIGGER trg_prvek_id
 BEGIN
     :NEW.id_prvku := seq_prvek_id.NEXTVAL;
 END;
-
+/
 
 -- ************************ --
 -- Seedování ukázkových dat --
@@ -1206,7 +1146,7 @@ INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni
 VALUES (seq_rozkazy_id.NEXTVAL,
         'invazní',
         'Zaútočte na hlavní město a osvoboďte ho od nadvády Impéria.',
-        TO_DATE('25-02-30', 'YY-MM-DD'),
+        TO_DATE('25-02-28', 'YY-MM-DD'),
         TO_DATE('25-03-09', 'YY-MM-DD'),
         'selhaný',
         (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Námořnictvo Aliance Rebelů'));
