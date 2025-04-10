@@ -1,11 +1,10 @@
--- Active: 1743342513549@@gort.fit.vutbr.cz@1521@orclpdb@XKREJCD00>
 /*
  * Téma:   Zadání IUS 2023/24 – Galaktické impérium (68)
  *
  * Autoři: Jan Kalina    <xkalinj00>
  *         David Krejčí  <xkrejcd00>
  *
- * Datum:  30.03.2025
+ * Datum:  10.04.2025
  */
 
 -- ******************************* --
@@ -95,7 +94,6 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20001, 'subtyp_uzivatele musí být NULL pro typ_uzivatele "imperator".');
     END IF;
 END;
-/
 -- Poznámka: V Oracle databázích je rozsah chybových kódů pro uživatelem definované
 --           chyby od -20000 do -20999.
 
@@ -113,8 +111,7 @@ CREATE TABLE Padawan
     padawanem_od DATE,
     padawanem_do DATE,
     PRIMARY KEY (id_mistra, id_padawana), -- Unární vztah má složený primární klíč
-    CHECK (EXTRACT(YEAR FROM padawanem_od) > EXTRACT(YEAR FROM padawanem_do) OR
-    (EXTRACT(YEAR FROM padawanem_od) = EXTRACT(YEAR FROM padawanem_do) AND padawanem_od <= padawanem_do)) -- Kontrola, že datum začátku je před datem konce
+    CHECK (padawanem_od <= padawanem_do)  -- Kontrola, že datum začátku je před datem konce
     -- <<FK>> na mistra (uživatele)
     -- <<FK>> na padawana (uživatele)
 );
@@ -267,8 +264,7 @@ CREATE TABLE Rozkaz
     zneni          CLOB,
     datum_vydani   DATE,
     termin_splneni DATE,
-    CHECK (EXTRACT(YEAR FROM datum_vydani) > EXTRACT(YEAR FROM termin_splneni) OR
-    (EXTRACT(YEAR FROM datum_vydani) = EXTRACT(YEAR FROM termin_splneni) AND datum_vydani <= termin_splneni)), -- Kontrola, že datum vydání rozkazu je před/roven termínem splnění
+    CHECK ( datum_vydani <= termin_splneni), -- Kontrola, že datum vydání rozkazu je před/roven termínem splnění
     stav_rozkazu   VARCHAR2(30) CHECK (stav_rozkazu IN ('nový', 'rozpracovaný', 'splněný', 'selhaný', 'zrušený')),
     id_flotily     NUMBER
     -- <<FK>> na flotilu, která rozkaz plní
@@ -287,7 +283,7 @@ CREATE TABLE Lod
                                    ('stíhačka', 'bombardér', 'korveta', 'fregata', 'křižník', 'bitevní loď',
                                     'hvězdný destruktor', 'transportní loď', 'průzkumná loď', 'nákladní loď',
                                     'Hvězda smrti')),
-    stav_lode  VARCHAR2(30) CHECK (stav_lode IN ('nová', 'používaná', 'poškozená', 'zničena')),
+    stav_lode  VARCHAR2(30) CHECK (stav_lode IN ('nová', 'používaná', 'poškozená', 'zničená')),
     id_flotily NUMBER,
     id_systemu NUMBER,
     id_planety NUMBER
@@ -815,7 +811,7 @@ INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Hoth'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'H'),
-        15.00000);
+        5.09000);
 INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Hoth'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Hoth'),
@@ -837,7 +833,7 @@ INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Dagobah'),
         (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'N'),
-        60.10000);
+        40.10000);
 INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Dagobah'),
@@ -924,13 +920,25 @@ VALUES ('Anakin', 'Skywalker',
 INSERT INTO Uzivatel (jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele, rasa, mnozstvi_midichlorianu,
                       narozeniny, lod_kde_se_nachazi, planetarni_system_narozeni, planeta_narozeni)
 VALUES ('Darth', 'Vader',
-        'jedi', 'velitel',
+        'jedi', 'rytíř',
         'kyborg',
         25000,
         TO_DATE('41-01-01', 'YY-MM-DD'),
         NULL,
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'));
+
+-- Rytíř Generála Grievous
+INSERT INTO Uzivatel (jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele, rasa, mnozstvi_midichlorianu,
+                      narozeniny, lod_kde_se_nachazi, planetarni_system_narozeni, planeta_narozeni)
+VALUES ('Generál', 'Grievous',
+        'jedi', 'velitel',
+        'droid',
+        0,
+        TO_DATE('50-01-01', 'YY-MM-DD'),
+        NULL,
+        NULL,
+        NULL);
 
 -- Vkládání dat do tabulky Flotila
 ----- Flotila 'Nejvyšší Řád' -----
@@ -942,7 +950,7 @@ VALUES (seq_flotily_id.NEXTVAL,
          FROM Planeta
          WHERE nazev_planety = 'Tatooine'
            AND id_systemu = (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Tatoo')),
-        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Darth' AND prijmeni = 'Vader'));
+        (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Generál' AND prijmeni = 'Grievous'));
 
 ----- Flotila 'Otevřený Kruh' -----
 INSERT INTO Flotila (id_flotily, nazev_flotily, id_systemu, id_planety, id_velitele)
@@ -981,7 +989,7 @@ INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_system
 VALUES (seq_lode_id.NEXTVAL,
         'Hvězdný destruktor třídy Imperial I - 0002',
         'hvězdný destruktor',
-        'používaná',
+        'poškozená',
         (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Nejvyšší Řád'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Naboo'));
@@ -990,7 +998,7 @@ INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_system
 VALUES (seq_lode_id.NEXTVAL,
         'Hvězdný destruktor třídy Imperial I - 0003',
         'hvězdný destruktor',
-        'používaná',
+        'zničená',
         (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Nejvyšší Řád'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Naboo'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Naboo'));
@@ -1086,30 +1094,190 @@ VALUES (seq_mece_id.NEXTVAL,
         'opotřebený',
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Anakin' AND prijmeni = 'Skywalker'));
 
+INSERT INTO SVETELNY_MEC (ID_MECE,
+                          NAZEV_MECE,
+                          TYP_MECE,
+                          BARVA_MECE,
+                          STAV_MECE,
+                          ID_UZIVATELE)
+VALUES (SEQ_MECE_ID.NEXTVAL,
+        'Meč Qui-Gon Jinna',
+        'klasický',
+        'zelená',
+        'lehce opotřebený',
+        (SELECT ID_UZIVATELE
+         FROM UZIVATEL
+         WHERE
+             JMENO =
+             'Generál'
+           AND
+             PRIJMENI =
+             'Grievous'));
+
+INSERT INTO SVETELNY_MEC (ID_MECE,
+                          NAZEV_MECE,
+                          TYP_MECE,
+                          BARVA_MECE,
+                          STAV_MECE,
+                          ID_UZIVATELE)
+VALUES (SEQ_MECE_ID.NEXTVAL,
+        'Meč Shaak Ti',
+        'klasický',
+        'modrá',
+        'opotřebený',
+        (SELECT ID_UZIVATELE
+         FROM UZIVATEL
+         WHERE
+             JMENO =
+             'Generál'
+           AND
+             PRIJMENI =
+             'Grievous'));
+
+INSERT INTO SVETELNY_MEC (ID_MECE,
+                          NAZEV_MECE,
+                          TYP_MECE,
+                          BARVA_MECE,
+                          STAV_MECE,
+                          ID_UZIVATELE)
+VALUES (SEQ_MECE_ID.NEXTVAL,
+        'Meč Eeth Kotha',
+        'klasický',
+        'žlutá',
+        'silně opotřebený',
+        (SELECT ID_UZIVATELE
+         FROM UZIVATEL
+         WHERE
+             JMENO =
+             'Generál'
+           AND
+             PRIJMENI =
+             'Grievous'));
+
+INSERT INTO SVETELNY_MEC (ID_MECE,
+                          NAZEV_MECE,
+                          TYP_MECE,
+                          BARVA_MECE,
+                          STAV_MECE,
+                          ID_UZIVATELE)
+VALUES (SEQ_MECE_ID.NEXTVAL,
+        'Meč Adi Galliové',
+        'klasický',
+        'modrá',
+        'lehce opotřebený',
+        (SELECT ID_UZIVATELE
+         FROM UZIVATEL
+         WHERE
+             JMENO =
+             'Generál'
+           AND
+             PRIJMENI =
+             'Grievous'));
+
+INSERT INTO SVETELNY_MEC (ID_MECE,
+                          NAZEV_MECE,
+                          TYP_MECE,
+                          BARVA_MECE,
+                          STAV_MECE,
+                          ID_UZIVATELE)
+VALUES (SEQ_MECE_ID.NEXTVAL,
+        'Meč Ki-Adi-Mundiho',
+        'klasický',
+        'zelená',
+        'poničený bojem',
+        (SELECT ID_UZIVATELE
+         FROM UZIVATEL
+         WHERE
+             JMENO =
+             'Generál'
+           AND
+             PRIJMENI =
+             'Grievous'));
+
+INSERT INTO SVETELNY_MEC (ID_MECE,
+                          NAZEV_MECE,
+                          TYP_MECE,
+                          BARVA_MECE,
+                          STAV_MECE,
+                          ID_UZIVATELE)
+VALUES (SEQ_MECE_ID.NEXTVAL,
+        'Meč Plo Koona',
+        'klasický',
+        'žlutá',
+        'lehce opotřebený',
+        (SELECT ID_UZIVATELE
+         FROM UZIVATEL
+         WHERE
+             JMENO =
+             'Generál'
+           AND
+             PRIJMENI =
+             'Grievous'));
+
+INSERT INTO SVETELNY_MEC (ID_MECE,
+                          NAZEV_MECE,
+                          TYP_MECE,
+                          BARVA_MECE,
+                          STAV_MECE,
+                          ID_UZIVATELE)
+VALUES (SEQ_MECE_ID.NEXTVAL,
+        'Meč Depy Billaby',
+        'klasický',
+        'modrá',
+        'opotřebený',
+        (SELECT ID_UZIVATELE
+         FROM UZIVATEL
+         WHERE
+             JMENO =
+             'Generál'
+           AND
+             PRIJMENI =
+             'Grievous'));
+
+INSERT INTO SVETELNY_MEC (ID_MECE,
+                          NAZEV_MECE,
+                          TYP_MECE,
+                          BARVA_MECE,
+                          STAV_MECE,
+                          ID_UZIVATELE)
+VALUES (SEQ_MECE_ID.NEXTVAL,
+        'Meč Luminary Unduli',
+        'klasický',
+        'zelená',
+        'silně opotřebený',
+        (SELECT ID_UZIVATELE
+         FROM UZIVATEL
+         WHERE
+             JMENO =
+             'Generál'
+           AND
+             PRIJMENI =
+             'Grievous'));
+
 -- Vkládání dat do tabulky Padawan
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
 VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Mace' AND prijmeni = 'Windu'),
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Obi-Wan' AND prijmeni = 'Kenobi'),
-        TO_DATE('50-02-07', 'YY-MM-DD'),
-        TO_DATE('39-03-04', 'YY-MM-DD'));
+        TO_DATE('39-03-04', 'YY-MM-DD'),
+        TO_DATE('50-02-07', 'YY-MM-DD'));
 
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
 VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Obi-Wan' AND prijmeni = 'Kenobi'),
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Anakin' AND prijmeni = 'Skywalker'),
-        TO_DATE('35-01-01', 'YY-MM-DD'),
-        TO_DATE('26-10-05', 'YY-MM-DD'));
+        TO_DATE('26-10-05', 'YY-MM-DD'),
+        TO_DATE('35-01-01', 'YY-MM-DD'));
 
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
 VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Minch' AND prijmeni = 'Yoda'),
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Luke' AND prijmeni = 'Skywalker'),
-        TO_DATE('12-05-05', 'YY-MM-DD'),
-        TO_DATE('10-05-05', 'YY-MM-DD'));
+        TO_DATE('10-05-05', 'YY-MM-DD'),
+        TO_DATE('12-05-05', 'YY-MM-DD'));
 
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
 VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Minch' AND prijmeni = 'Yoda'),
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Mace' AND prijmeni = 'Windu'),
-        TO_DATE('64-02-01', 'YY-MM-DD'),
-        TO_DATE('52-01-03', 'YY-MM-DD'));
+        TO_DATE('52-01-03', 'YY-MM-DD'),
+        TO_DATE('64-02-01', 'YY-MM-DD'));
 
 -- Vkládání dat do tabulky Rozkaz
 ----- Rozkaz flotily 'Nejvyšší Řád' -----
@@ -1145,7 +1313,7 @@ VALUES (seq_rozkazy_id.NEXTVAL,
 INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni, stav_rozkazu, id_flotily)
 VALUES (seq_rozkazy_id.NEXTVAL,
         'invazní',
-        'Zaútočte na hlavní město a osvoboďte ho od nadvády Impéria.',
+        'Zaútočte na hlavní město a osvoboďte ho od nadvlády Impéria.',
         TO_DATE('25-02-28', 'YY-MM-DD'),
         TO_DATE('25-03-09', 'YY-MM-DD'),
         'selhaný',
@@ -1159,5 +1327,189 @@ VALUES (seq_rozkazy_id.NEXTVAL,
         NULL,
         'rozpracovaný',
         (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Námořnictvo Aliance Rebelů'));
+
+-- Aktualizace lodi, kde se uživatel nachází
+UPDATE Uzivatel
+SET lod_kde_se_nachazi = (SELECT id_lode FROM Lod WHERE nazev_lode = 'Pýcha Corusantu')
+WHERE jmeno = 'Obi-Wan'
+  AND prijmeni = 'Kenobi';
+
+UPDATE Uzivatel
+SET lod_kde_se_nachazi = (SELECT id_lode FROM Lod WHERE nazev_lode = 'Millennium Falcon')
+WHERE jmeno = 'Luke'
+  AND prijmeni = 'Skywalker';
+
+UPDATE Uzivatel
+SET lod_kde_se_nachazi = (SELECT id_lode FROM Lod WHERE nazev_lode = 'Ledová Čepel')
+WHERE jmeno = 'Minch'
+  AND prijmeni = 'Yoda';
+
+UPDATE Uzivatel
+SET lod_kde_se_nachazi = (SELECT id_lode FROM Lod WHERE nazev_lode = 'Vlajková loď Anakina Skywalkera')
+WHERE jmeno = 'Anakin'
+  AND prijmeni = 'Skywalker';
+
+UPDATE Uzivatel
+SET lod_kde_se_nachazi = (SELECT id_lode FROM Lod WHERE nazev_lode = 'Hvězdný destruktor třídy Imperial I - 0001')
+WHERE jmeno = 'Generál'
+  AND prijmeni = 'Grievous';
+
+UPDATE Uzivatel
+SET lod_kde_se_nachazi = (SELECT id_lode FROM Lod WHERE nazev_lode = 'Hvězdný destruktor třídy Imperial I - 0001')
+WHERE jmeno = 'Darth'
+  AND prijmeni = 'Vader';
+
+UPDATE Uzivatel
+SET lod_kde_se_nachazi = (SELECT id_lode FROM Lod WHERE nazev_lode = 'Millennium Falcon')
+WHERE jmeno = 'Mace'
+  AND prijmeni = 'Windu';
+
+
+-- ************************************************************************** --
+-- *                                                                        * --
+-- *     SELECT dotazy zadané způsobem podobným půlsemestrální zkoušce      * --
+-- *                                                                        * --
+-- ************************************************************************** --
+
+-- Kteří uživatelé (jedi) vlastní pojmenované světelné meče a jak se tyto meče
+-- jmenují? Seřaďte uživatele podle příjmení sestupně. (jmeno, prijmeni, nazev_mece)
+SELECT jmeno, prijmeni, nazev_mece
+FROM Uzivatel NATURAL JOIN Svetelny_mec
+WHERE typ_uzivatele = 'jedi' AND nazev_mece IS NOT NULL
+ORDER BY prijmeni DESC;
+
+
+-- Jaké flotily obíhají kolem jakých planet a kdo je jejich velitel?
+-- (nazev_flotily, nazev_planety, jmeno_velitele, prijmeni_velitele)
+SELECT f.nazev_flotily, p.nazev_planety, u.jmeno AS jmeno_velitele, u.prijmeni AS prijmeni_velitele
+FROM Flotila f NATURAL JOIN Planeta p JOIN Uzivatel u ON f.id_velitele = u.id_uzivatele
+WHERE u.subtyp_uzivatele = 'velitel';
+
+
+-- Kolik světelných mečů vlastní jednotliví jedi? Seřaďte podle počtu mečů vzestupně.
+-- (jmeno, prijmeni, pocet_mecu)
+SELECT jmeno, prijmeni, COUNT(id_mece) AS pocet_mecu
+FROM Uzivatel NATURAL LEFT JOIN Svetelny_mec
+WHERE typ_uzivatele = 'jedi'
+GROUP BY jmeno, prijmeni
+ORDER BY pocet_mecu ASC;
+
+
+-- Které planety mají chybně zadané složení atmosféry (tedy součet prvků v atmosféře
+-- není 100 %) a kolik je jejich chybný součet? Seřaďte podle souctu zastoupení sestupně.
+-- (nazev_planety, soucet_zastoupeni)
+SELECT nazev_planety, SUM(zastoupeni_prvku) AS soucet_zastoupeni
+FROM Planeta NATURAL JOIN Slozeni_planety NATURAL JOIN Chemicky_prvek
+GROUP BY nazev_planety
+HAVING SUM(zastoupeni_prvku) != 100
+ORDER BY soucet_zastoupeni DESC;
+
+
+-- Které planety mají ve své atmosféře zastoupený prvek s chemickou značkou "O"
+-- v míře vyšší než 20%? (nazev_planety, nazev_prvku, zastoupeni_prvku)
+SELECT nazev_planety, nazev_prvku, zastoupeni_prvku
+FROM Planeta NATURAL JOIN Slozeni_planety NATURAL JOIN Chemicky_prvek
+WHERE znacka_prvku = 'O' AND zastoupeni_prvku > 20;
+
+
+-- Které hvězdy jsou složeny z alespoň jednoho chemického prvku se zastoupením
+-- vyšším než 90 %? (nazev_hvezdy, znacka_prvku, nazev_prvku, zastoupeni_prvku)
+SELECT DISTINCT nazev_hvezdy, znacka_prvku, nazev_prvku, zastoupeni_prvku
+FROM Hvezda NATURAL JOIN Slozeni_hvezdy NATURAL JOIN Chemicky_prvek
+WHERE zastoupeni_prvku > 90;
+
+
+-- Kteří uživatelé se nacházejí na lodi "Millennium Falcon"? Seřaďtě uživatele
+-- podle jejich subtypu sestupně? (jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele)
+SELECT jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele
+FROM Uzivatel
+WHERE lod_kde_se_nachazi IN (
+    SELECT id_lode
+    FROM Lod
+    WHERE nazev_lode = 'Millennium Falcon'
+);
+
+
+-- Které rozkazy byly vydány flotilám, jejichž velitel vlastní více než jeden
+-- světelný meč? Výsledek seřaďte sestupně podle názvu flotily.
+-- (jmeno, prijmeni, nazev_flotily, typ_rozkazu, zneni, pocet_mecu)
+SELECT u.jmeno, u.prijmeni, f.nazev_flotily, r.typ_rozkazu, r.zneni,
+       (SELECT COUNT(*)
+        FROM Svetelny_mec sm
+        WHERE sm.id_uzivatele = u.id_uzivatele) AS pocet_mecu
+FROM Rozkaz r
+         JOIN Flotila f ON r.id_flotily = f.id_flotily
+         JOIN Uzivatel u ON f.id_velitele = u.id_uzivatele
+WHERE u.id_uzivatele IN (
+    SELECT sm.id_uzivatele
+    FROM Svetelny_mec sm
+    GROUP BY sm.id_uzivatele
+    HAVING COUNT(*) > 1
+)
+ORDER BY nazev_flotily DESC;
+
+
+-- Kolik padawanů má každý mistr? (jmeno_mistra, prijmeni_mistra, pocet_padawanu)
+SELECT u.jmeno AS jmeno_mistra, u.prijmeni AS prijmeni_mistra, COUNT(p.id_padawana) AS pocet_padawanu
+FROM Uzivatel u JOIN Padawan p ON u.id_uzivatele = p.id_mistra
+WHERE u.typ_uzivatele = 'jedi'
+GROUP BY u.jmeno, u.prijmeni
+ORDER BY pocet_padawanu DESC;
+
+
+-- Jaké rozkazy byly vydány po 1. lednu 2025 a dosud nejsou splněny?
+-- (typ_rozkazu, zneni_rozkazu, datum_vydani, stav_rozkazu)
+SELECT typ_rozkazu, zneni AS zneni_rozkazu, datum_vydani, stav_rozkazu
+FROM Rozkaz
+WHERE datum_vydani > TO_DATE('2025-01-01', 'YYYY-MM-DD') AND stav_rozkazu != 'splněný';
+
+
+-- Které flotily obíhají kolem planet, které jsou typu "terestrická"?
+-- (nazev_flotily, nazev_planety)
+SELECT nazev_flotily, nazev_planety
+FROM Flotila NATURAL JOIN Planeta
+WHERE typ_planety = 'terestrická';
+
+
+-- Jaké je průměrné množství midichlorianu u uživatelů typu "jedi" podle jejich
+-- subtypu? (subtyp_uzivatele, prumer_midichlorianu)
+SELECT subtyp_uzivatele, AVG(mnozstvi_midichlorianu) AS prumer_midichlorianu
+FROM Uzivatel
+WHERE typ_uzivatele = 'jedi'
+GROUP BY subtyp_uzivatele;
+
+
+-- Které rozkazy jsou spojeny s flotilami, které vlastní loď obsahující v svém
+-- názvu podřetězec "destruktor"? (typ_rozkazu, zneni_rozkazu, nazev_lode)
+SELECT r.typ_rozkazu, r.zneni AS zneni_rozkazu, l.nazev_lode
+FROM Rozkaz r
+JOIN Flotila f ON r.id_flotily = f.id_flotily
+JOIN Lod l ON f.id_flotily = l.id_flotily
+WHERE l.nazev_lode LIKE '%destruktor%';
+
+
+-- Kteří jedi vlastní světelný meč, ale k dnešnímu dni nemají žádného padawana?
+-- (jmeno_jedi, prijmeni_jedi)
+SELECT DISTINCT jmeno as jmeno_jedi, prijmeni AS prijmeni_jedi
+FROM Uzivatel NATURAL JOIN Svetelny_mec
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM Padawan
+    WHERE id_mistra = id_uzivatele
+      AND SYSDATE BETWEEN padawanem_od AND padawanem_do
+);
+
+
+-- Kteří velitelé evidují ve své flotile alespoň jednu loď ve stavu "poškozená"
+-- nebo "zničená"? (jmeno, prijmeni)
+SELECT u.jmeno AS jmeno_velitele, u.prijmeni AS prijmeni_velitele
+FROM Uzivatel u
+WHERE EXISTS (
+    SELECT 1
+    FROM Flotila f
+             JOIN Lod l ON f.id_flotily = l.id_flotily
+    WHERE f.id_velitele = u.id_uzivatele
+      AND l.stav_lode IN ('poškozená', 'zničena')
+);
 
 -- konec souboru --
