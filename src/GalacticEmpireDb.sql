@@ -1,7 +1,7 @@
 /*
- * Téma:   Zadání IUS 2023/24 – Galaktické impérium (68)
+ * Téma:   Zadání IUS 202324 – Galaktické impérium (68)
  *
- * Autoři: Jan Kalina    <xkalinj00>
+ * Autoři: Jan Kalina    <honziksick>
  *         David Krejčí  <xkrejcd00>
  *
  * Datum:  10.04.2025
@@ -21,6 +21,7 @@ DROP SEQUENCE seq_system_id;
 DROP SEQUENCE seq_planeta_id;
 DROP SEQUENCE seq_hvezda_id;
 DROP SEQUENCE seq_prvek_id;
+DROP SEQUENCE seq_rozkaz_historie_id;
 
 -- Odstranění všech tabulek (včetně závislostí)
 DROP TABLE Padawan CASCADE CONSTRAINTS;
@@ -35,6 +36,10 @@ DROP TABLE Hvezda CASCADE CONSTRAINTS;
 DROP TABLE Chemicky_prvek CASCADE CONSTRAINTS;
 DROP TABLE Planetarni_system CASCADE CONSTRAINTS;
 DROP TABLE Uzivatel CASCADE CONSTRAINTS;
+DROP TABLE Rozkaz_historie_zmen CASCADE CONSTRAINTS;
+
+-- Odstranění všech materializovaných pohledů a logů
+DROP MATERIALIZED VIEW mv_lode_ve_flotile;
 
 
 -- ************************************* --
@@ -51,6 +56,7 @@ CREATE SEQUENCE seq_system_id START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE seq_planeta_id START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE seq_hvezda_id START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE seq_prvek_id START WITH 1 INCREMENT BY 1;
+CREATE SEQUENCE seq_rozkaz_historie_id START WITH 1 INCREMENT BY 1;
 
 
 -- **************************** --
@@ -79,24 +85,6 @@ CREATE TABLE Uzivatel
     -- <<FK>> na planetu, kde se uživatel narodil
     -- <<FK>> na loď, kde se uživatel nachází
 );
-
--- Trigger pro kontrolu správnosti hodnoty 'subtyp_uzivatele' podle 'typ_uzivatele'
-CREATE OR REPLACE TRIGGER trg_check_subtyp_uzivatele
-    BEFORE INSERT OR UPDATE
-    ON Uzivatel
-    FOR EACH ROW
-BEGIN
-    -- Jedi musí mít  subtyp 'rytíř' nebo 'velitel'!
-    IF :NEW.typ_uzivatele = 'jedi' AND :NEW.subtyp_uzivatele NOT IN ('rytíř', 'velitel') THEN
-        RAISE_APPLICATION_ERROR(-20001, 'Neplatný subtyp_uzivatele pro typ_uzivatele "jedi".');
-        -- Imperátora musí být subtyp NULL!
-    ELSIF :NEW.typ_uzivatele = 'imperator' AND :NEW.subtyp_uzivatele IS NOT NULL THEN
-        RAISE_APPLICATION_ERROR(-20001, 'subtyp_uzivatele musí být NULL pro typ_uzivatele "imperator".');
-    END IF;
-END;
--- Poznámka: V Oracle databázích je rozsah chybových kódů pro uživatelem definované
---           chyby od -20000 do -20999.
-
 
 -- ********************************************************************* --
 -- Tabulka Padawan (reprezentace unárního vztahu mezi mistry a padawany) --
@@ -147,7 +135,6 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20002, 'id_padawana musí mít typ_uzivatele "jedi".');
     END IF;
 END;
-/
 
 -- ***************************************** --
 -- Tabulka Svetelny_mec (světelné meče jedi) --
@@ -247,7 +234,6 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20001, 'id_velitele musí mít subtyp_uzivatele "velitel".');
     END IF;
 END;
-/
 
 -- **************************************** --
 -- Tabulka Rozkaz (rozkazy plněný flotilou) --
@@ -264,7 +250,7 @@ CREATE TABLE Rozkaz
     zneni          CLOB,
     datum_vydani   DATE,
     termin_splneni DATE,
-    CHECK ( datum_vydani <= termin_splneni), -- Kontrola, že datum vydání rozkazu je před/roven termínem splnění
+    CHECK ( datum_vydani <= termin_splneni), -- Kontrola, že datum vydání rozkazu je předroven termínem splnění
     stav_rozkazu   VARCHAR2(30) CHECK (stav_rozkazu IN ('nový', 'rozpracovaný', 'splněný', 'selhaný', 'zrušený')),
     id_flotily     NUMBER
     -- <<FK>> na flotilu, která rozkaz plní
@@ -412,7 +398,6 @@ CREATE OR REPLACE TRIGGER trg_uzivatel_id
 BEGIN
     :NEW.id_uzivatele := seq_uzivatel_id.NEXTVAL;
 END;
-/
 
 -- Trigger pro tabulku Svetelny_mec (id_mece)
 CREATE OR REPLACE TRIGGER trg_mece_id
@@ -422,7 +407,6 @@ CREATE OR REPLACE TRIGGER trg_mece_id
 BEGIN
     :NEW.id_mece := seq_mece_id.NEXTVAL;
 END;
-/
 
 -- Trigger pro tabulku Flotila (id_flotily)
 CREATE OR REPLACE TRIGGER trg_flotily_id
@@ -432,7 +416,6 @@ CREATE OR REPLACE TRIGGER trg_flotily_id
 BEGIN
     :NEW.id_flotily := seq_flotily_id.NEXTVAL;
 END;
-/
 
 -- Trigger pro tabulku Lod (id_lode)
 CREATE OR REPLACE TRIGGER trg_lode_id
@@ -442,7 +425,6 @@ CREATE OR REPLACE TRIGGER trg_lode_id
 BEGIN
     :NEW.id_lode := seq_lode_id.NEXTVAL;
 END;
-/
 
 -- Trigger pro tabulku Rozkaz (id_rozkazu)
 CREATE OR REPLACE TRIGGER trg_rozkazy_id
@@ -452,7 +434,6 @@ CREATE OR REPLACE TRIGGER trg_rozkazy_id
 BEGIN
     :NEW.id_rozkazu := seq_rozkazy_id.NEXTVAL;
 END;
-/
 
 -- Trigger pro tabulku Planetarni_system (id_systemu)
 CREATE OR REPLACE TRIGGER trg_system_id
@@ -462,7 +443,6 @@ CREATE OR REPLACE TRIGGER trg_system_id
 BEGIN
     :NEW.id_systemu := seq_system_id.NEXTVAL;
 END;
-/
 
 -- Trigger pro tabulku Planeta (id_planety)
 CREATE OR REPLACE TRIGGER trg_planeta_id
@@ -472,7 +452,6 @@ CREATE OR REPLACE TRIGGER trg_planeta_id
 BEGIN
     :NEW.id_planety := seq_planeta_id.NEXTVAL;
 END;
-/
 
 -- Trigger pro tabulku Hvezda (id_hvezdy)
 CREATE OR REPLACE TRIGGER trg_hvezda_id
@@ -482,7 +461,6 @@ CREATE OR REPLACE TRIGGER trg_hvezda_id
 BEGIN
     :NEW.id_hvezdy := seq_hvezda_id.NEXTVAL;
 END;
-/
 
 -- Trigger pro tabulku Chemicky_prvek (id_prvku)
 CREATE OR REPLACE TRIGGER trg_prvek_id
@@ -492,7 +470,6 @@ CREATE OR REPLACE TRIGGER trg_prvek_id
 BEGIN
     :NEW.id_prvku := seq_prvek_id.NEXTVAL;
 END;
-/
 
 -- ************************ --
 -- Seedování ukázkových dat --
@@ -1094,165 +1071,65 @@ VALUES (seq_mece_id.NEXTVAL,
         'opotřebený',
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Anakin' AND prijmeni = 'Skywalker'));
 
-INSERT INTO SVETELNY_MEC (ID_MECE,
-                          NAZEV_MECE,
-                          TYP_MECE,
-                          BARVA_MECE,
-                          STAV_MECE,
-                          ID_UZIVATELE)
-VALUES (SEQ_MECE_ID.NEXTVAL,
-        'Meč Qui-Gon Jinna',
-        'klasický',
-        'zelená',
-        'lehce opotřebený',
-        (SELECT ID_UZIVATELE
-         FROM UZIVATEL
-         WHERE
-             JMENO =
-             'Generál'
-           AND
-             PRIJMENI =
-             'Grievous'));
+INSERT INTO svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
+    VALUES (seq_mece_id.nextval,
+            'Meč Qui-Gon Jinna',
+            'klasický',
+            'zelená',
+            'lehce opotřebený',
+            (SELECT id_uzivatele FROM uzivatel WHERE jmeno = 'Generál' AND prijmeni = 'Grievous'));
 
-INSERT INTO SVETELNY_MEC (ID_MECE,
-                          NAZEV_MECE,
-                          TYP_MECE,
-                          BARVA_MECE,
-                          STAV_MECE,
-                          ID_UZIVATELE)
-VALUES (SEQ_MECE_ID.NEXTVAL,
-        'Meč Shaak Ti',
-        'klasický',
-        'modrá',
-        'opotřebený',
-        (SELECT ID_UZIVATELE
-         FROM UZIVATEL
-         WHERE
-             JMENO =
-             'Generál'
-           AND
-             PRIJMENI =
-             'Grievous'));
+INSERT INTO svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
+    VALUES (seq_mece_id.nextval, 'Meč Shaak Ti', 'klasický', 'modrá', 'opotřebený',
+           (SELECT id_uzivatele FROM uzivatel WHERE jmeno = 'Generál' AND prijmeni = 'Grievous'));
 
-INSERT INTO SVETELNY_MEC (ID_MECE,
-                          NAZEV_MECE,
-                          TYP_MECE,
-                          BARVA_MECE,
-                          STAV_MECE,
-                          ID_UZIVATELE)
-VALUES (SEQ_MECE_ID.NEXTVAL,
-        'Meč Eeth Kotha',
-        'klasický',
-        'žlutá',
-        'silně opotřebený',
-        (SELECT ID_UZIVATELE
-         FROM UZIVATEL
-         WHERE
-             JMENO =
-             'Generál'
-           AND
-             PRIJMENI =
-             'Grievous'));
+INSERT INTO svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
+    VALUES (seq_mece_id.nextval,
+            'Meč Eeth Kotha',
+            'klasický',
+            'žlutá',
+            'silně opotřebený',
+            (SELECT id_uzivatele FROM uzivatel WHERE jmeno = 'Generál' AND prijmeni = 'Grievous'));
 
-INSERT INTO SVETELNY_MEC (ID_MECE,
-                          NAZEV_MECE,
-                          TYP_MECE,
-                          BARVA_MECE,
-                          STAV_MECE,
-                          ID_UZIVATELE)
-VALUES (SEQ_MECE_ID.NEXTVAL,
-        'Meč Adi Galliové',
-        'klasický',
-        'modrá',
-        'lehce opotřebený',
-        (SELECT ID_UZIVATELE
-         FROM UZIVATEL
-         WHERE
-             JMENO =
-             'Generál'
-           AND
-             PRIJMENI =
-             'Grievous'));
+INSERT INTO svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
+    VALUES (seq_mece_id.nextval,
+            'Meč Adi Galliové',
+            'klasický',
+            'modrá',
+            'lehce opotřebený',
+            (SELECT id_uzivatele FROM uzivatel WHERE jmeno = 'Generál' AND prijmeni = 'Grievous'));
 
-INSERT INTO SVETELNY_MEC (ID_MECE,
-                          NAZEV_MECE,
-                          TYP_MECE,
-                          BARVA_MECE,
-                          STAV_MECE,
-                          ID_UZIVATELE)
-VALUES (SEQ_MECE_ID.NEXTVAL,
-        'Meč Ki-Adi-Mundiho',
-        'klasický',
-        'zelená',
-        'poničený bojem',
-        (SELECT ID_UZIVATELE
-         FROM UZIVATEL
-         WHERE
-             JMENO =
-             'Generál'
-           AND
-             PRIJMENI =
-             'Grievous'));
+INSERT INTO svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
+    VALUES (seq_mece_id.nextval,
+            'Meč Ki-Adi-Mundiho',
+            'klasický',
+            'zelená',
+            'poničený bojem',
+            (SELECT id_uzivatele FROM uzivatel WHERE jmeno = 'Generál' AND prijmeni = 'Grievous'));
 
-INSERT INTO SVETELNY_MEC (ID_MECE,
-                          NAZEV_MECE,
-                          TYP_MECE,
-                          BARVA_MECE,
-                          STAV_MECE,
-                          ID_UZIVATELE)
-VALUES (SEQ_MECE_ID.NEXTVAL,
-        'Meč Plo Koona',
-        'klasický',
-        'žlutá',
-        'lehce opotřebený',
-        (SELECT ID_UZIVATELE
-         FROM UZIVATEL
-         WHERE
-             JMENO =
-             'Generál'
-           AND
-             PRIJMENI =
-             'Grievous'));
+INSERT INTO svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
+    VALUES (seq_mece_id.nextval,
+            'Meč Plo Koona',
+            'klasický',
+            'žlutá',
+            'lehce opotřebený',
+            (SELECT id_uzivatele FROM uzivatel WHERE jmeno = 'Generál' AND prijmeni = 'Grievous'));
 
-INSERT INTO SVETELNY_MEC (ID_MECE,
-                          NAZEV_MECE,
-                          TYP_MECE,
-                          BARVA_MECE,
-                          STAV_MECE,
-                          ID_UZIVATELE)
-VALUES (SEQ_MECE_ID.NEXTVAL,
-        'Meč Depy Billaby',
-        'klasický',
-        'modrá',
-        'opotřebený',
-        (SELECT ID_UZIVATELE
-         FROM UZIVATEL
-         WHERE
-             JMENO =
-             'Generál'
-           AND
-             PRIJMENI =
-             'Grievous'));
+INSERT INTO svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
+    VALUES (seq_mece_id.nextval,
+            'Meč Depy Billaby',
+            'klasický',
+            'modrá',
+            'opotřebený',
+            (SELECT id_uzivatele FROM uzivatel WHERE jmeno = 'Generál' AND prijmeni = 'Grievous'));
 
-INSERT INTO SVETELNY_MEC (ID_MECE,
-                          NAZEV_MECE,
-                          TYP_MECE,
-                          BARVA_MECE,
-                          STAV_MECE,
-                          ID_UZIVATELE)
-VALUES (SEQ_MECE_ID.NEXTVAL,
-        'Meč Luminary Unduli',
-        'klasický',
-        'zelená',
-        'silně opotřebený',
-        (SELECT ID_UZIVATELE
-         FROM UZIVATEL
-         WHERE
-             JMENO =
-             'Generál'
-           AND
-             PRIJMENI =
-             'Grievous'));
+INSERT INTO svetelny_mec (id_mece, nazev_mece, typ_mece, barva_mece, stav_mece, id_uzivatele)
+    VALUES (seq_mece_id.nextval,
+            'Meč Luminary Unduli',
+            'klasický',
+            'zelená',
+            'silně opotřebený',
+            (SELECT id_uzivatele FROM uzivatel WHERE jmeno = 'Generál' AND prijmeni = 'Grievous'));
 
 -- Vkládání dat do tabulky Padawan
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
@@ -1264,7 +1141,7 @@ VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Mace' AND prijmeni = '
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
 VALUES ((SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Obi-Wan' AND prijmeni = 'Kenobi'),
         (SELECT id_uzivatele FROM Uzivatel WHERE jmeno = 'Anakin' AND prijmeni = 'Skywalker'),
-        TO_DATE('26-10-05', 'YY-MM-DD'),
+        TO_DATE('24-10-05', 'YY-MM-DD'),
         TO_DATE('35-01-01', 'YY-MM-DD'));
 
 INSERT INTO Padawan (id_mistra, id_padawana, padawanem_od, padawanem_do)
@@ -1372,11 +1249,11 @@ WHERE jmeno = 'Mace'
 -- ************************************************************************** --
 
 -- Kteří uživatelé (jedi) vlastní pojmenované světelné meče a jak se tyto meče
--- jmenují? Seřaďte uživatele podle příjmení sestupně. (jmeno, prijmeni, nazev_mece)
+-- jmenují? Seřaďte uživatele podle příjmení vzestupně. (jmeno, prijmeni, nazev_mece)
 SELECT jmeno, prijmeni, nazev_mece
 FROM Uzivatel NATURAL JOIN Svetelny_mec
 WHERE typ_uzivatele = 'jedi' AND nazev_mece IS NOT NULL
-ORDER BY prijmeni DESC;
+ORDER BY prijmeni ASC;
 
 
 -- Jaké flotily obíhají kolem jakých planet a kdo je jejich velitel?
@@ -1386,13 +1263,13 @@ FROM Flotila f NATURAL JOIN Planeta p JOIN Uzivatel u ON f.id_velitele = u.id_uz
 WHERE u.subtyp_uzivatele = 'velitel';
 
 
--- Kolik světelných mečů vlastní jednotliví jedi? Seřaďte podle počtu mečů vzestupně.
+-- Kolik světelných mečů vlastní jednotliví jedi? Seřaďte podle počtu mečů sestupně.
 -- (jmeno, prijmeni, pocet_mecu)
 SELECT jmeno, prijmeni, COUNT(id_mece) AS pocet_mecu
 FROM Uzivatel NATURAL LEFT JOIN Svetelny_mec
 WHERE typ_uzivatele = 'jedi'
 GROUP BY jmeno, prijmeni
-ORDER BY pocet_mecu ASC;
+ORDER BY pocet_mecu DESC;
 
 
 -- Které planety mají chybně zadané složení atmosféry (tedy součet prvků v atmosféře
@@ -1420,8 +1297,8 @@ WHERE zastoupeni_prvku > 90;
 
 
 -- Kteří uživatelé se nacházejí na lodi "Millennium Falcon"? Seřaďtě uživatele
--- podle jejich subtypu sestupně? (jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele)
-SELECT jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele
+-- podle jejich subtypu sestupně? (jmeno, prijmeni, typ_uzivatele, hodnost)
+SELECT jmeno, prijmeni, typ_uzivatele, subtyp_uzivatele AS hodnost
 FROM Uzivatel
 WHERE lod_kde_se_nachazi IN (
     SELECT id_lode
@@ -1432,13 +1309,13 @@ WHERE lod_kde_se_nachazi IN (
 
 -- Které rozkazy byly vydány flotilám, jejichž velitel vlastní více než jeden
 -- světelný meč? Výsledek seřaďte sestupně podle názvu flotily.
--- (jmeno, prijmeni, nazev_flotily, typ_rozkazu, zneni, pocet_mecu)
-SELECT u.jmeno, u.prijmeni, f.nazev_flotily, r.typ_rozkazu, r.zneni,
+-- (hodnost, jmeno_velitele, prijmeni_velitele, nazev_flotily, typ_rozkazu, zneni, pocet_mecu)
+SELECT u.subtyp_uzivatele AS hodnost, u.jmeno, u.prijmeni, f.nazev_flotily, r.typ_rozkazu, r.zneni,
        (SELECT COUNT(*)
         FROM Svetelny_mec sm
         WHERE sm.id_uzivatele = u.id_uzivatele) AS pocet_mecu
 FROM Rozkaz r
-         JOIN Flotila f ON r.id_flotily = f.id_flotily
+         JOIN Flotila f ON f.id_flotily = r.id_flotily
          JOIN Uzivatel u ON f.id_velitele = u.id_uzivatele
 WHERE u.id_uzivatele IN (
     SELECT sm.id_uzivatele
@@ -1449,7 +1326,8 @@ WHERE u.id_uzivatele IN (
 ORDER BY nazev_flotily DESC;
 
 
--- Kolik padawanů má každý mistr? (jmeno_mistra, prijmeni_mistra, pocet_padawanu)
+-- Kolik padawanů má každý mistr? Seřaďte sestupně dle počtu padawanů.
+-- (jmeno_mistra, prijmeni_mistra, pocet_padawanu)
 SELECT u.jmeno AS jmeno_mistra, u.prijmeni AS prijmeni_mistra, COUNT(p.id_padawana) AS pocet_padawanu
 FROM Uzivatel u JOIN Padawan p ON u.id_uzivatele = p.id_mistra
 WHERE u.typ_uzivatele = 'jedi'
@@ -1457,11 +1335,11 @@ GROUP BY u.jmeno, u.prijmeni
 ORDER BY pocet_padawanu DESC;
 
 
--- Jaké rozkazy byly vydány po 1. lednu 2025 a dosud nejsou splněny?
+-- Jaké rozkazy byly vydány po 1. lednu 2025 a dosud nejsou dokončeny?
 -- (typ_rozkazu, zneni_rozkazu, datum_vydani, stav_rozkazu)
 SELECT typ_rozkazu, zneni AS zneni_rozkazu, datum_vydani, stav_rozkazu
 FROM Rozkaz
-WHERE datum_vydani > TO_DATE('2025-01-01', 'YYYY-MM-DD') AND stav_rozkazu != 'splněný';
+WHERE datum_vydani > TO_DATE('2025-01-01', 'YYYY-MM-DD') AND stav_rozkazu != 'splněný' AND stav_rozkazu != 'selhaný';
 
 
 -- Které flotily obíhají kolem planet, které jsou typu "terestrická"?
@@ -1472,8 +1350,8 @@ WHERE typ_planety = 'terestrická';
 
 
 -- Jaké je průměrné množství midichlorianu u uživatelů typu "jedi" podle jejich
--- subtypu? (subtyp_uzivatele, prumer_midichlorianu)
-SELECT subtyp_uzivatele, AVG(mnozstvi_midichlorianu) AS prumer_midichlorianu
+-- subtypu? (hodnost_jedi, prumer_midichlorianu)
+SELECT subtyp_uzivatele AS hodnost_jedi, AVG(mnozstvi_midichlorianu) AS prumer_midichlorianu
 FROM Uzivatel
 WHERE typ_uzivatele = 'jedi'
 GROUP BY subtyp_uzivatele;
@@ -1483,12 +1361,12 @@ GROUP BY subtyp_uzivatele;
 -- názvu podřetězec "destruktor"? (typ_rozkazu, zneni_rozkazu, nazev_lode)
 SELECT r.typ_rozkazu, r.zneni AS zneni_rozkazu, l.nazev_lode
 FROM Rozkaz r
-JOIN Flotila f ON r.id_flotily = f.id_flotily
-JOIN Lod l ON f.id_flotily = l.id_flotily
+         JOIN Flotila f ON r.id_flotily = f.id_flotily
+         JOIN Lod l ON f.id_flotily = l.id_flotily
 WHERE l.nazev_lode LIKE '%destruktor%';
 
 
--- Kteří jedi vlastní světelný meč, ale k dnešnímu dni nemají žádného padawana?
+-- Kteří jedi vlastní světelný meč, ale ke dni 10.04.2025 nemají žádného padawana?
 -- (jmeno_jedi, prijmeni_jedi)
 SELECT DISTINCT jmeno as jmeno_jedi, prijmeni AS prijmeni_jedi
 FROM Uzivatel NATURAL JOIN Svetelny_mec
@@ -1496,7 +1374,7 @@ WHERE NOT EXISTS (
     SELECT 1
     FROM Padawan
     WHERE id_mistra = id_uzivatele
-      AND SYSDATE BETWEEN padawanem_od AND padawanem_do
+      AND TO_DATE('2025-04-10', 'YYYY-MM-DD') BETWEEN padawanem_od AND padawanem_do
 );
 
 
@@ -1511,5 +1389,347 @@ WHERE EXISTS (
     WHERE f.id_velitele = u.id_uzivatele
       AND l.stav_lode IN ('poškozená', 'zničena')
 );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ******************************************************************************** --
+-- Vytvoření alespoň dvou netriviálních databázových triggerů vč. jejich předvedení --
+-- ******************************************************************************** --
+
+-- ***                                                                              ***
+-- * Trigger pro kontrolu správnosti hodnoty 'subtyp_uzivatele' podle 'typ_uzivatele' *
+-- ***                                                                              ***
+
+CREATE OR REPLACE TRIGGER trg_check_subtyp_uzivatele
+    BEFORE INSERT OR UPDATE
+    ON Uzivatel
+    FOR EACH ROW
+BEGIN
+    -- Jedi musí mít  subtyp 'rytíř' nebo 'velitel'!
+    IF :NEW.typ_uzivatele = 'jedi' AND :NEW.subtyp_uzivatele NOT IN ('rytíř', 'velitel') THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Neplatný subtyp_uzivatele pro typ_uzivatele "jedi".');
+        -- Imperátora musí být subtyp NULL!
+    ELSIF :NEW.typ_uzivatele = 'imperator' AND :NEW.subtyp_uzivatele IS NOT NULL THEN
+        RAISE_APPLICATION_ERROR(-20001, 'subtyp_uzivatele musí být NULL pro typ_uzivatele "imperator".');
+    END IF;
+END;
+-- Poznámka: V Oracle databázích je rozsah chybových kódů pro uživatelem definované
+--           chyby od -20000 do -20999.
+
+
+-- ***                                                                          ***
+-- * Trigger logující změny provedené v tabulce 'Rozkaz' do tabulky historie změn *
+-- ***                                                                          ***
+
+-- Vytvoříme si novou tabulku pro auditování změn stavu rozkazu pomocí triggeru
+-- Poznámka: tato tabulka neplyne ze zadání, je nad rámec původního ER diagramu
+CREATE TABLE Rozkaz_historie_zmen
+(
+    historie_id NUMBER PRIMARY KEY,
+    id_rozkazu  NUMBER,
+    old_status  VARCHAR2(30),
+    new_status  VARCHAR2(30),
+    changed_on  DATE
+);
+
+CREATE OR REPLACE TRIGGER trg_uloz_zmenu_rozkazu
+    BEFORE UPDATE OF stav_rozkazu
+    ON Rozkaz
+    FOR EACH ROW
+BEGIN
+    INSERT INTO Rozkaz_historie_zmen (historie_id, id_rozkazu, old_status, new_status, changed_on)
+    VALUES (seq_rozkaz_historie_id.nextval,
+            :NEW.id_rozkazu,
+            NVL(:OLD.stav_rozkazu, 'nový'), -- při INSERT je old stav 'nový'
+            :NEW.stav_rozkazu,
+            SYSDATE);
+END;
+
+-- Vyvolání triggeru (změna stavu rozkazu) a ukázka historie změn
+UPDATE Rozkaz
+SET stav_rozkazu = 'rozpracovaný'
+WHERE id_rozkazu = 2;
+
+SELECT *
+FROM Rozkaz_historie_zmen
+WHERE id_rozkazu = 2;
+
+UPDATE Rozkaz
+SET stav_rozkazu = 'splněný'
+WHERE id_rozkazu = 2;
+
+SELECT *
+FROM Rozkaz_historie_zmen
+WHERE id_rozkazu = 2;
+
+
+-- ***                                                                            ***
+-- * Trigger kontrolující, že celková suma prvků 'Slozeni_planety'změn je <= 100 %  *
+-- ***                                                                            ***
+
+CREATE OR REPLACE TRIGGER trg_planeta_slozeni_check
+    BEFORE INSERT OR UPDATE
+    ON slozeni_planety
+    FOR EACH ROW
+DECLARE
+    celkove_slozeni NUMBER;
+BEGIN
+    SELECT SUM(zastoupeni_prvku)
+    INTO celkove_slozeni
+    FROM slozeni_planety
+    WHERE id_systemu = :NEW.id_systemu AND id_planety = :NEW.id_planety;
+    IF NVL(celkove_slozeni, 0) + :NEW.zastoupeni_prvku > 100 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'Suma procent složení přesahuje 100%');
+    END IF;
+END;
+
+-- Vyvolání triggeru, kdy celkové složení bude >100 % – očekává chybu
+-- Poznámka: pro odevdzání tuto ukázku raději necháme zakomentovanou, aby
+--           při testování nedocházelo k chybě při pokusu o vložení dat do tabulky
+-- Poznámka: to, že trigger není vyvoláván, když by neměl být (tedy složení <= 100 %),
+--           dokáazují INSERTy do tabulky v rámci seedování vzorových dat
+/*
+INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
+VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
+        (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Dagobah'),
+        (SELECT id_prvku FROM Chemicky_prvek WHERE znacka_prvku = 'Ne'),
+        100.00000);
+*/
+
+
+-- ***************************************************************************** --
+-- Vytvoření alespoň dvou netriviálních uložených procedur vč. jejich předvedení --
+-- ***************************************************************************** --
+
+-- 2) Uložené procedury s kurzem, %TYPE%ROWTYPE a ošetřením výjimek
+-- 2.1 Procedura pro výpis flotil a jejich lodí (kurzor a %ROWTYPE)
+CREATE OR REPLACE PROCEDURE proc_list_flotil_lodi IS
+    CURSOR c_flotil IS
+        SELECT id_flotily, nazev_flotily
+        FROM Flotila;
+    v_flotila   c_flotil%ROWTYPE;
+BEGIN
+    DBMS_OUTPUT.PUT_LINE('Seznam flotil a jejich lodí:');
+    OPEN c_flotil;
+    LOOP
+        FETCH c_flotil INTO v_flotila;
+        EXIT WHEN c_flotil%NOTFOUND;
+        DBMS_OUTPUT.PUT_LINE('Flotila: ' || v_flotila.nazev_flotily);
+        FOR rec IN (
+            SELECT nazev_lode FROM Lod WHERE id_flotily = v_flotila.id_flotily
+            ) LOOP
+                DBMS_OUTPUT.PUT_LINE('  - ' || rec.nazev_lode);
+            END LOOP;
+    END LOOP;
+    CLOSE c_flotil;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Chyba v proc_list_flotil_lodi: ' || SQLERRM);
+END;
+-- Demo: volání procedury
+BEGIN
+    proc_list_flotil_lodi;
+END;
+
+-- 2.2 Procedura pro aktualizaci termínu rozkazu s ošetřením a %TYPE
+CREATE OR REPLACE PROCEDURE proc_extend_rozkaz_deadline(
+    p_id_rozkazu    IN Rozkaz.id_rozkazu%TYPE,
+    p_new_deadline  IN Rozkaz.termin_splneni%TYPE
+) IS
+    v_old_deadline  Rozkaz.termin_splneni%TYPE;
+BEGIN
+    SELECT termin_splneni
+    INTO v_old_deadline
+    FROM Rozkaz
+    WHERE id_rozkazu = p_id_rozkazu;
+
+    IF p_new_deadline < v_old_deadline THEN
+        RAISE_APPLICATION_ERROR(-20020, 'Nový termín musí být pozdější než stávající.');
+    END IF;
+
+    UPDATE Rozkaz
+    SET termin_splneni = p_new_deadline
+    WHERE id_rozkazu = p_id_rozkazu;
+
+    DBMS_OUTPUT.PUT_LINE('Termín rozkazu ' || p_id_rozkazu || ' prodloužen z ' || v_old_deadline || ' na ' || p_new_deadline);
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        DBMS_OUTPUT.PUT_LINE('Rozkaz s ID ' || p_id_rozkazu || ' neexistuje.');
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Chyba v proc_extend_rozkaz_deadline: ' || SQLERRM);
+END;
+-- Demo: volání procedury
+BEGIN
+    proc_extend_rozkaz_deadline(2, TO_DATE('2025-12-31','YYYY-MM-DD'));
+END;
+
+-- ******************************************************************************** --
+-- Vytvoření alespoň jednoho indexu tak, aby pomohl optimalizovat zpracování dotazů --
+-- s využitím EXPLAIN PLAN pro výpis se spojením alespoň dvou tabulek, agregační    --
+-- funkce a klauzule GROUP BY                                                       --
+-- ******************************************************************************** --
+
+-- Rozběhneme EXPLAIN PLAN na dotaz s JOIN a GROUP BY
+EXPLAIN PLAN FOR
+SELECT u.typ_uzivatele, COUNT(*)
+FROM Uzivatel u
+         JOIN Padawan p ON u.id_uzivatele = p.id_mistra
+GROUP BY u.typ_uzivatele;
+-- Zobrazení plánu:
+SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY());
+
+-- Vytvoření indexu pro optimalizaci spojení Padawan->Uzivatel
+CREATE INDEX idx_padawan_mistr ON Padawan(id_mistra);
+
+-- EXPLAIN PLAN znovu po vytvoření indexu
+EXPLAIN PLAN FOR
+SELECT u.typ_uzivatele, COUNT(*)
+FROM Uzivatel u
+         JOIN Padawan p ON u.id_uzivatele = p.id_mistra
+GROUP BY u.typ_uzivatele;
+SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY());
+
+-- Vysvětlení:
+-- Před vytvořením indexu dochází k full table scanu Padawan. Po vytvoření idx_padawan_mistr
+-- je možné použít index scan pro rychlejší výběr záznamů z Padawan podle mistra.
+-- Pro další urychlení by bylo vhodné zvážit materiálizovanou aggregaci nebo partitioning
+-- tabulky Padawan podle id_mistra.
+
+-- ************************************************************************************ --
+-- Definici přístupových práv k databázovým objektům pro druhého člena týmu (xkrejcd00) --                                                       --
+-- ************************************************************************************ --
+
+GRANT SELECT, INSERT, UPDATE ON Uzivatel TO xkrejcd00;
+GRANT SELECT, INSERT, UPDATE ON Flotila TO xkrejcd00;
+GRANT SELECT ON Lod TO xkrejcd00;
+GRANT CREATE MATERIALIZED VIEW         TO xkrejcd00;
+
+-- ****************************************************************************** --
+-- Vytvoření alespoň jednoho materializovaného pohledu patřící druhému členu týmu --                                                       --
+-- ****************************************************************************** --
+
+-- 5.2. Vytvoření materializovaných pohledů logu na straně majitele (honziksick)
+-- (spušťí honziksick)
+CREATE MATERIALIZED VIEW LOG ON honziksick.Lod
+    WITH ROWID, SEQUENCE (id_flotily, id_lode, stav_lode)
+    INCLUDING NEW VALUES;
+
+CREATE MATERIALIZED VIEW LOG ON honziksick.Flotila
+    WITH ROWID, SEQUENCE (id_flotily, id_velitele)
+    INCLUDING NEW VALUES;
+
+-- 5.3. Vytvoření materializovaného pohledu v schématu xkrejcd00
+-- (spuštěno jako xkrejcd00)
+CREATE MATERIALIZED VIEW mv_lode_ve_flotile
+    REFRESH FAST ON DEMAND
+AS
+SELECT f.id_velitele,
+       COUNT(l.id_lode) AS total_ships,
+       SUM(CASE WHEN l.stav_lode = 'poškozená' THEN 1 ELSE 0 END) AS damaged_ships
+FROM honziksick.Flotila f
+         JOIN honziksick.Lod     l ON f.id_flotily = l.id_flotily
+GROUP BY f.id_velitele;
+
+-- 5.4. Demonstrace funkčnosti materializovaného pohledu
+-- Refresh a kontrola dat (jako xkrejcd00)
+BEGIN
+    DBMS_MVIEW.REFRESH('mv_lode_ve_flotile');
+END;
+
+SELECT * FROM mv_lode_ve_flotile;
+
+
+-- *************************************************************************************** --
+-- Vytvoření jednoho komplexního dotazu SELECT využívajícího klauzuli WITH a operátor CASE --                                                       --
+-- *************************************************************************************** --
+
+WITH fleet_status AS (
+    SELECT f.id_velitele,
+           COUNT(*) AS total,
+           SUM(CASE WHEN l.stav_lode IN ('poškozená','zničena') THEN 1 ELSE 0 END) AS bad_count
+    FROM honziksick.Flotila f
+             JOIN honziksick.Lod l ON f.id_flotily = l.id_flotily
+    GROUP BY f.id_velitele
+)
+SELECT u.jmeno       AS jmeno_velitele,
+       u.prijmeni    AS prijmeni_velitele,
+       fs.total,
+       fs.bad_count,
+       CASE
+           WHEN fs.bad_count = 0              THEN 'Všechny lodě OK'
+           WHEN fs.bad_count < fs.total     THEN 'Částečné poškození'
+           ELSE 'Vysoké poškození'
+           END AS stav_flotily
+FROM fleet_status fs
+         JOIN honziksick.Uzivatel u ON u.id_uzivatele = fs.id_velitele;
+-- Poznámka: Tento dotaz získává pro každého velitele flotily celkový počet lodí,
+-- počet poškozenýchzničených lodí a klasifikuje stav flotily pomocí CASE.
+
+
 
 -- konec souboru --
