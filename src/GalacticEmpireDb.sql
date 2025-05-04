@@ -1,10 +1,10 @@
 /*
  * Téma:   Zadání IUS 202324 – Galaktické impérium (68)
  *
- * Autoři: Jan Kalina    <honziksick>
+ * Autoři: Jan Kalina    <xkalinj00>
  *         David Krejčí  <xkrejcd00>
  *
- * Datum:  10.04.2025
+ * Datum:  03.05.2025 (novinky k poslednímu odevzdání cca od řádku 1390)
  */
 
 -- ******************************* --
@@ -231,7 +231,7 @@ BEGIN
     WHERE id_uzivatele = :NEW.id_velitele;
 
     IF var_subtyp_uzivatele != 'velitel' THEN
-        RAISE_APPLICATION_ERROR(-20001, 'id_velitele musí mít subtyp_uzivatele "velitel".');
+        RAISE_APPLICATION_ERROR(-20003, 'id_velitele musí mít subtyp_uzivatele "velitel".');
     END IF;
 END;
 
@@ -251,7 +251,7 @@ CREATE TABLE Rozkaz
     datum_vydani   DATE,
     termin_splneni DATE,
     CHECK ( datum_vydani <= termin_splneni), -- Kontrola, že datum vydání rozkazu je předroven termínem splnění
-    stav_rozkazu   VARCHAR2(30) CHECK (stav_rozkazu IN ('nový', 'rozpracovaný', 'splněný', 'selhaný', 'zrušený')),
+    stav_rozkazu   VARCHAR2(30) CHECK (stav_rozkazu IN ('nový', 'rozpracovaný', 'pozastavený', 'splněný', 'selhaný', 'zrušený')),
     id_flotily     NUMBER
     -- <<FK>> na flotilu, která rozkaz plní
 );
@@ -985,7 +985,7 @@ INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_system
 VALUES (seq_lode_id.NEXTVAL,
         'Vlajková loď Anakina Skywalkera',
         'hvězdný destruktor',
-        'používaná',
+        'zničená',
         (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'));
@@ -994,7 +994,7 @@ INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_system
 VALUES (seq_lode_id.NEXTVAL,
         'Hvězdný destruktor třídy Venator - 0002',
         'hvězdný destruktor',
-        'používaná',
+        'zničená',
         (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'));
@@ -1003,7 +1003,7 @@ INSERT INTO Lod (id_lode, nazev_lode, typ_lode, stav_lode, id_flotily, id_system
 VALUES (seq_lode_id.NEXTVAL,
         'Pýcha Corusantu',
         'bitevní loď',
-        'používaná',
+        'zničená',
         (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'),
         (SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Coruscant'),
         (SELECT id_planety FROM Planeta WHERE nazev_planety = 'Coruscant'));
@@ -1174,7 +1174,7 @@ VALUES (seq_rozkazy_id.NEXTVAL,
         'Chraňte hlavní město proti možnému útoku povstalců.',
         TO_DATE('25-03-01', 'YY-MM-DD'),
         TO_DATE('25-03-10', 'YY-MM-DD'),
-        'splněný',
+        'rozpracovaný',
         (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'));
 
 INSERT INTO Rozkaz (id_rozkazu, typ_rozkazu, zneni, datum_vydani, termin_splneni, stav_rozkazu, id_flotily)
@@ -1183,7 +1183,7 @@ VALUES (seq_rozkazy_id.NEXTVAL,
         'Prozkoumejte oblast sektoru Chommell a hlaste aktivitu povstalců.',
         TO_DATE('25-02-20', 'YY-MM-DD'),
         NULL,
-        'rozpracovaný',
+        'splněný',
         (SELECT id_flotily FROM Flotila WHERE nazev_flotily = 'Otevřený Kruh'));
 
 ----- Rozkazy flotily 'Námořnictvo Aliance Rebelů' -----
@@ -1391,71 +1391,6 @@ WHERE EXISTS (
 );
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 -- ******************************************************************************** --
 -- Vytvoření alespoň dvou netriviálních databázových triggerů vč. jejich předvedení --
 -- ******************************************************************************** --
@@ -1469,12 +1404,12 @@ CREATE OR REPLACE TRIGGER trg_check_subtyp_uzivatele
     ON Uzivatel
     FOR EACH ROW
 BEGIN
-    -- Jedi musí mít  subtyp 'rytíř' nebo 'velitel'!
+    -- Jedi musí mít subtyp 'rytíř' nebo 'velitel'!
     IF :NEW.typ_uzivatele = 'jedi' AND :NEW.subtyp_uzivatele NOT IN ('rytíř', 'velitel') THEN
-        RAISE_APPLICATION_ERROR(-20001, 'Neplatný subtyp_uzivatele pro typ_uzivatele "jedi".');
+        RAISE_APPLICATION_ERROR(-20004, 'Neplatný subtyp_uzivatele pro typ_uzivatele "jedi".');
         -- Imperátora musí být subtyp NULL!
     ELSIF :NEW.typ_uzivatele = 'imperator' AND :NEW.subtyp_uzivatele IS NOT NULL THEN
-        RAISE_APPLICATION_ERROR(-20001, 'subtyp_uzivatele musí být NULL pro typ_uzivatele "imperator".');
+        RAISE_APPLICATION_ERROR(-20005, 'subtyp_uzivatele musí být NULL pro typ_uzivatele "imperator".');
     END IF;
 END;
 -- Poznámka: V Oracle databázích je rozsah chybových kódů pro uživatelem definované
@@ -1485,7 +1420,7 @@ END;
 -- * Trigger logující změny provedené v tabulce 'Rozkaz' do tabulky historie změn *
 -- ***                                                                          ***
 
--- Vytvoříme si novou tabulku pro auditování změn stavu rozkazu pomocí triggeru
+-- Vytvoříme si novou tabulku pro sledování historie změn stavu rozkazu pomocí triggeru
 -- Poznámka: tato tabulka neplyne ze zadání, je nad rámec původního ER diagramu
 CREATE TABLE Rozkaz_historie_zmen
 (
@@ -1493,20 +1428,64 @@ CREATE TABLE Rozkaz_historie_zmen
     id_rozkazu  NUMBER,
     old_status  VARCHAR2(30),
     new_status  VARCHAR2(30),
-    changed_on  DATE
+    changed_by  VARCHAR2(50),
+    changed_on  DATE DEFAULT SYSDATE NOT NULL,
+    poznamka    VARCHAR2(500),
+    CONSTRAINT fk_historie_rozkaz FOREIGN KEY (id_rozkazu) REFERENCES Rozkaz (id_rozkazu)
 );
 
 CREATE OR REPLACE TRIGGER trg_uloz_zmenu_rozkazu
     BEFORE UPDATE OF stav_rozkazu
     ON Rozkaz
     FOR EACH ROW
+DECLARE
+    povoleny_prechod BOOLEAN := FALSE;
+    uzivatel VARCHAR2(50) := USER;
+    poznamka VARCHAR2(500);
 BEGIN
-    INSERT INTO Rozkaz_historie_zmen (historie_id, id_rozkazu, old_status, new_status, changed_on)
+    -- Kontrola povolených přechodů mezi stavy
+    CASE :OLD.stav_rozkazu
+    WHEN 'nový' THEN
+        IF :NEW.stav_rozkazu IN ('rozpracovaný', 'zrušený') THEN
+            povoleny_prechod := TRUE;
+        END IF;
+    WHEN 'rozpracovaný' THEN
+        IF :NEW.stav_rozkazu IN ('splněný', 'selhaný', 'pozastavený') THEN
+            povoleny_prechod := TRUE;
+        END IF;
+    WHEN 'pozastaven' THEN
+        IF :NEW.stav_rozkazu IN ('rozpracovaný', 'zrušený') THEN
+            povoleny_prechod := TRUE;
+        END IF;
+    WHEN 'splněný' THEN
+        povoleny_prechod := FALSE; -- Rozkaz dokončen (splněn)
+        poznamka := 'Nelze změnit stav ze "splněný" na jiný';
+    WHEN 'selhaný' THEN
+        povoleny_prechod := FALSE; -- Rozkaz dokončen (neúspěšně)
+        poznamka := 'Nelze změnit stav ze "selhaný" na jiný';
+    WHEN 'zrušený' THEN
+        povoleny_prechod := FALSE; -- Rozkaz dokončen (zrušen)
+        poznamka := 'Nelze změnit stav ze "zrušený" na jiný';
+    ELSE
+        -- Neznámý původní stav: povolíme přechod s varováním
+        povoleny_prechod := TRUE;
+        poznamka := 'Varování: Přechod z neznámého stavu "' || :OLD.stav_rozkazu || '"';
+        END CASE;
+
+    -- Pokud přechod není povolen, vrátíme chybu
+    IF NOT povoleny_prechod THEN
+        RAISE_APPLICATION_ERROR(-20006, 'Nepovolený přechod stavu z "' || :OLD.stav_rozkazu || '" na "' || :NEW.stav_rozkazu || '". ' || poznamka);
+    END IF;
+
+    -- Záznam změny do historie
+    INSERT INTO Rozkaz_historie_zmen (historie_id, id_rozkazu, old_status, new_status, changed_by, changed_on, poznamka)
     VALUES (seq_rozkaz_historie_id.nextval,
             :NEW.id_rozkazu,
-            NVL(:OLD.stav_rozkazu, 'nový'), -- při INSERT je old stav 'nový'
+            :OLD.stav_rozkazu,
             :NEW.stav_rozkazu,
-            SYSDATE);
+            uzivatel,
+            SYSDATE,
+            'Standardní změna stavu rozkazu');
 END;
 
 -- Vyvolání triggeru (změna stavu rozkazu) a ukázka historie změn
@@ -1543,7 +1522,7 @@ BEGIN
     FROM slozeni_planety
     WHERE id_systemu = :NEW.id_systemu AND id_planety = :NEW.id_planety;
     IF NVL(celkove_slozeni, 0) + :NEW.zastoupeni_prvku > 100 THEN
-        RAISE_APPLICATION_ERROR(-20002, 'Suma procent složení přesahuje 100%');
+        RAISE_APPLICATION_ERROR(-20007, 'Suma procent složení přesahuje 100%');
     END IF;
 END;
 
@@ -1551,7 +1530,7 @@ END;
 -- Poznámka: pro odevdzání tuto ukázku raději necháme zakomentovanou, aby
 --           při testování nedocházelo k chybě při pokusu o vložení dat do tabulky
 -- Poznámka: to, že trigger není vyvoláván, když by neměl být (tedy složení <= 100 %),
---           dokáazují INSERTy do tabulky v rámci seedování vzorových dat
+--           dokazují INSERTy do tabulky v rámci seedování vzorových dat
 /*
 INSERT INTO Slozeni_planety (id_systemu, id_planety, id_prvku, zastoupeni_prvku)
 VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah'),
@@ -1565,171 +1544,246 @@ VALUES ((SELECT id_systemu FROM Planetarni_system WHERE nazev_systemu = 'Dagobah
 -- Vytvoření alespoň dvou netriviálních uložených procedur vč. jejich předvedení --
 -- ***************************************************************************** --
 
--- 2) Uložené procedury s kurzem, %TYPE%ROWTYPE a ošetřením výjimek
--- 2.1 Procedura pro výpis flotil a jejich lodí (kurzor a %ROWTYPE)
-CREATE OR REPLACE PROCEDURE proc_list_flotil_lodi IS
-    CURSOR c_flotil IS
+/*
+ * Procedura zobrazující hierarchii flotil a jejich přidělených lodí.
+ * Využívá explicitní kurzor s %ROWTYPE pro práci s celými řádky dat.
+ * Pro každou flotilu vypíše seznam všech jejích lodí pomocí vnořeného kurzoru.
+ * Obsahuje ošetření výjimek pro zajištění robustnosti při výskytu chyby.
+ */
+CREATE OR REPLACE PROCEDURE procedura_seznam_flotil_lodi IS
+    CURSOR kurzor_flotil IS
         SELECT id_flotily, nazev_flotily
-        FROM Flotila;
-    v_flotila   c_flotil%ROWTYPE;
+        FROM Flotila
+        ORDER BY nazev_flotily;
+    radek_flotila kurzor_flotil%ROWTYPE;
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('Seznam flotil a jejich lodí:');
-    OPEN c_flotil;
+    DBMS_OUTPUT.put_line('Seznam flotil a jejich přidělených lodí:');
+    OPEN kurzor_flotil;
     LOOP
-        FETCH c_flotil INTO v_flotila;
-        EXIT WHEN c_flotil%NOTFOUND;
-        DBMS_OUTPUT.PUT_LINE('Flotila: ' || v_flotila.nazev_flotily);
-        FOR rec IN (
-            SELECT nazev_lode FROM Lod WHERE id_flotily = v_flotila.id_flotily
-            ) LOOP
-                DBMS_OUTPUT.PUT_LINE('  - ' || rec.nazev_lode);
+        FETCH kurzor_flotil INTO radek_flotila;
+        EXIT WHEN kurzor_flotil%NOTFOUND;
+        DBMS_OUTPUT.put_line('Flotila: ' || radek_flotila.nazev_flotily);
+        FOR radek IN (SELECT nazev_lode, typ_lode, stav_lode
+                      FROM Lod
+                      WHERE id_flotily = radek_flotila.id_flotily
+                      ORDER BY nazev_lode)
+            LOOP
+                DBMS_OUTPUT.put_line('  - ' || radek.nazev_lode || ' (' || radek.typ_lode || ', stav: ' || radek.stav_lode || ')');
             END LOOP;
+        DBMS_OUTPUT.put_line('');
     END LOOP;
-    CLOSE c_flotil;
+    CLOSE kurzor_flotil;
 EXCEPTION
     WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('Chyba v proc_list_flotil_lodi: ' || SQLERRM);
-END;
--- Demo: volání procedury
-BEGIN
-    proc_list_flotil_lodi;
+        IF kurzor_flotil%ISOPEN THEN
+            CLOSE kurzor_flotil;
+        END IF;
+        DBMS_OUTPUT.put_line('Chyba při výpisu flotil a lodí: ' || SQLERRM);
 END;
 
--- 2.2 Procedura pro aktualizaci termínu rozkazu s ošetřením a %TYPE
-CREATE OR REPLACE PROCEDURE proc_extend_rozkaz_deadline(
-    p_id_rozkazu    IN Rozkaz.id_rozkazu%TYPE,
-    p_new_deadline  IN Rozkaz.termin_splneni%TYPE
+-- Ukázka volání první procedury
+BEGIN
+    procedura_seznam_flotil_lodi;
+END;
+
+
+/*
+ * Procedura pro prodloužení termínu splnění rozkazu.
+ * Demonstruje použití parametrizované procedury s datovými typy %TYPE,
+ * ověření podmínek před provedením aktualizace a pokročilé ošetření výjimek.
+ * Zajišťuje, že nový termín musí být pozdější než původní, jinak vyvolá chybu.
+ */
+
+CREATE OR REPLACE PROCEDURE procedura_prodlouzeni_rozkazu
+(
+    param_id_rozkazu IN rozkaz.id_rozkazu%TYPE,
+    param_new_deadline IN rozkaz.termin_splneni%TYPE
 ) IS
-    v_old_deadline  Rozkaz.termin_splneni%TYPE;
+    stary_termin rozkaz.termin_splneni%TYPE;
+    stav_rozkazu rozkaz.stav_rozkazu%TYPE;
 BEGIN
-    SELECT termin_splneni
-    INTO v_old_deadline
+    -- Kontrola existence rozkazu a získání současných hodnot
+    SELECT termin_splneni, stav_rozkazu
+    INTO stary_termin, stav_rozkazu
     FROM Rozkaz
-    WHERE id_rozkazu = p_id_rozkazu;
+    WHERE id_rozkazu = param_id_rozkazu;
 
-    IF p_new_deadline < v_old_deadline THEN
-        RAISE_APPLICATION_ERROR(-20020, 'Nový termín musí být pozdější než stávající.');
+    -- Kontrola stavu rozkazu - nelze měnit termín pro splněný nebo selhaný rozkaz
+    IF stav_rozkazu IN ('splněný', 'selhaný') THEN
+        RAISE_APPLICATION_ERROR(-20008, 'Nelze měnit termín pro rozkaz ve stavu ' || stav_rozkazu);
     END IF;
 
+    -- Kontrola, zda nový termín je pozdější než původní
+    IF param_new_deadline < stary_termin THEN
+        RAISE_APPLICATION_ERROR(-20009, 'Nový termín musí být pozdější než stávající.');
+    END IF;
+
+    -- Provedení aktualizace termínu
     UPDATE Rozkaz
-    SET termin_splneni = p_new_deadline
-    WHERE id_rozkazu = p_id_rozkazu;
+    SET termin_splneni = param_new_deadline
+    WHERE id_rozkazu = param_id_rozkazu;
 
-    DBMS_OUTPUT.PUT_LINE('Termín rozkazu ' || p_id_rozkazu || ' prodloužen z ' || v_old_deadline || ' na ' || p_new_deadline);
-
+    DBMS_OUTPUT.PUT_LINE('Termín rozkazu ' || param_id_rozkazu || ' prodloužen z ' || TO_CHAR(stary_termin, 'DD.MM.YYYY') ||
+                         ' na ' || TO_CHAR(param_new_deadline, 'DD.MM.YYYY'));
 EXCEPTION
     WHEN NO_DATA_FOUND THEN
-        DBMS_OUTPUT.PUT_LINE('Rozkaz s ID ' || p_id_rozkazu || ' neexistuje.');
+        DBMS_OUTPUT.PUT_LINE('Rozkaz s ID ' || param_id_rozkazu || ' neexistuje.');
     WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('Chyba v proc_extend_rozkaz_deadline: ' || SQLERRM);
+        DBMS_OUTPUT.PUT_LINE('Chyba při prodlužování termínu: ' || SQLERRM);
 END;
--- Demo: volání procedury
+
+-- Ukázka volání procedury
+SELECT *
+FROM Rozkaz
+WHERE id_rozkazu = 4;
+
 BEGIN
-    proc_extend_rozkaz_deadline(2, TO_DATE('2025-12-31','YYYY-MM-DD'));
+    procedura_prodlouzeni_rozkazu(4, TO_DATE('2025-12-31','YYYY-MM-DD'));
 END;
+
+SELECT *
+FROM Rozkaz
+WHERE id_rozkazu = 4;
+
 
 -- ******************************************************************************** --
 -- Vytvoření alespoň jednoho indexu tak, aby pomohl optimalizovat zpracování dotazů --
 -- s využitím EXPLAIN PLAN pro výpis se spojením alespoň dvou tabulek, agregační    --
--- funkce a klauzule GROUP BY                                                       --
+-- funkce a klauzule GROUP BY.                                                      --
 -- ******************************************************************************** --
 
--- Rozběhneme EXPLAIN PLAN na dotaz s JOIN a GROUP BY
+/**
+ * Nejprve analyzujeme výkonnost dotazu spojujícího tabulky 'Planeta', 'Slozeni_planety'
+ * a 'Chemicky_prvek' s agregací dat pomocí EXPLAIN PLAN. Následně vytváříme indexy
+ * na klíčových sloupcích a ověřujeme zlepšení výkonnosti.
+ * Cílem optimalizace je výrazné zlepšení odezvy při komplexních dotazech,
+ * zejména při častém dotazování na složení planet a jejich chemických prvků.
+ */
+
+-- Analýza výkonnosti dotazu před optimalizací
 EXPLAIN PLAN FOR
-SELECT u.typ_uzivatele, COUNT(*)
-FROM Uzivatel u
-         JOIN Padawan p ON u.id_uzivatele = p.id_mistra
-GROUP BY u.typ_uzivatele;
--- Zobrazení plánu:
+SELECT p.nazev_planety, COUNT(DISTINCT cp.id_prvku) AS pocet_prvku,
+       AVG(sp.zastoupeni_prvku) AS prumerne_zastoupeni,
+       MAX(sp.zastoupeni_prvku) AS max_zastoupeni
+FROM Planeta p
+     JOIN Slozeni_planety sp ON p.id_planety = sp.id_planety AND p.id_systemu = sp.id_systemu
+     JOIN Chemicky_prvek cp ON sp.id_prvku = cp.id_prvku
+WHERE cp.znacka_prvku IN ('H', 'O', 'N')
+GROUP BY p.nazev_planety
+HAVING AVG(sp.zastoupeni_prvku) > 20
+ORDER BY max_zastoupeni DESC;
+
+-- Zobrazení plánu vykonávání dotazu před optimalizací indexy
 SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY());
 
--- Vytvoření indexu pro optimalizaci spojení Padawan->Uzivatel
-CREATE INDEX idx_padawan_mistr ON Padawan(id_mistra);
+-- Vytvoření indexů pro optimalizaci
+-- Index na značku prvku - zrychlí filtraci podle H, O, N
+CREATE INDEX idx_chemicky_prvek_znacka ON Chemicky_prvek(znacka_prvku);
 
--- EXPLAIN PLAN znovu po vytvoření indexu
+-- Index na zastoupení prvku - zrychlí filtrování a agregaci pro zastoupení
+CREATE INDEX idx_slozeni_planety_zastoupeni ON Slozeni_planety(zastoupeni_prvku);
+
+-- Index na spojení tabulek - zrychlí spojení planet a jejich složení
+CREATE INDEX idx_slozeni_planety_planet ON Slozeni_planety(id_systemu, id_planety);
+
+-- Analýza stejného dotazu po vytvoření indexů
 EXPLAIN PLAN FOR
-SELECT u.typ_uzivatele, COUNT(*)
-FROM Uzivatel u
-         JOIN Padawan p ON u.id_uzivatele = p.id_mistra
-GROUP BY u.typ_uzivatele;
+SELECT p.nazev_planety, COUNT(DISTINCT cp.id_prvku) AS pocet_prvku,
+       AVG(sp.zastoupeni_prvku) AS prumerne_zastoupeni,
+       MAX(sp.zastoupeni_prvku) AS max_zastoupeni
+FROM Planeta p
+     JOIN Slozeni_planety sp ON p.id_planety = sp.id_planety AND p.id_systemu = sp.id_systemu
+     JOIN Chemicky_prvek cp ON sp.id_prvku = cp.id_prvku
+WHERE cp.znacka_prvku IN ('H', 'O', 'N')
+GROUP BY p.nazev_planety
+HAVING AVG(sp.zastoupeni_prvku) > 20
+ORDER BY max_zastoupeni DESC;
+
+-- Zobrazení plánu vykonávání po optimalizaci
 SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY());
 
--- Vysvětlení:
--- Před vytvořením indexu dochází k full table scanu Padawan. Po vytvoření idx_padawan_mistr
--- je možné použít index scan pro rychlejší výběr záznamů z Padawan podle mistra.
--- Pro další urychlení by bylo vhodné zvážit materiálizovanou aggregaci nebo partitioning
--- tabulky Padawan podle id_mistra.
 
 -- ************************************************************************************ --
--- Definici přístupových práv k databázovým objektům pro druhého člena týmu (xkrejcd00) --                                                       --
+-- Definici přístupových práv k databázovým objektům pro druhého člena týmu (xkrejcd00) --
 -- ************************************************************************************ --
 
-GRANT SELECT, INSERT, UPDATE ON Uzivatel TO xkrejcd00;
-GRANT SELECT, INSERT, UPDATE ON Flotila TO xkrejcd00;
-GRANT SELECT ON Lod TO xkrejcd00;
-GRANT CREATE MATERIALIZED VIEW         TO xkrejcd00;
+GRANT ALL ON Flotila TO xkrejcd00;
+GRANT ALL ON Lod TO xkrejcd00;
+
 
 -- ****************************************************************************** --
--- Vytvoření alespoň jednoho materializovaného pohledu patřící druhému členu týmu --                                                       --
+-- Vytvoření alespoň jednoho materializovaného pohledu patřící druhému členu týmu --
 -- ****************************************************************************** --
 
--- 5.2. Vytvoření materializovaných pohledů logu na straně majitele (honziksick)
--- (spušťí honziksick)
-CREATE MATERIALIZED VIEW LOG ON honziksick.Lod
+/**
+ * Vytváření materializovaných pohledů zajišťuje efektivní přístup k často
+ * používaným agregovaným datům. Tyto pohledy poskytují rychlý přístup k předem
+ * vypočítaným výsledkům složitých dotazů.
+ * Nejprve vytváříme logy pro materializované pohledy, které sledují změny
+ * v tabulkách 'Lod' a 'Flotila'. Následně vytvoříme materializovaný pohled
+ * ve schématu druhého člena týmu (xkrejcd00), který může být rychle aktualizován
+ * na základě těchto logů.
+ */
+
+-- Vytvoření logů pro sledování změn v relevantních tabulkách na straně majitele (xkalinj00)
+CREATE MATERIALIZED VIEW LOG ON Lod
     WITH ROWID, SEQUENCE (id_flotily, id_lode, stav_lode)
     INCLUDING NEW VALUES;
 
-CREATE MATERIALIZED VIEW LOG ON honziksick.Flotila
+CREATE MATERIALIZED VIEW LOG ON Flotila
     WITH ROWID, SEQUENCE (id_flotily, id_velitele)
     INCLUDING NEW VALUES;
 
--- 5.3. Vytvoření materializovaného pohledu v schématu xkrejcd00
--- (spuštěno jako xkrejcd00)
-CREATE MATERIALIZED VIEW mv_lode_ve_flotile
-    REFRESH FAST ON DEMAND
+-- Vytvoření materializovaného pohledu v schématu druhého člena týmu (xkrejcd00)
+-- Pohled sleduje celkový počet lodí a počet poškozených lodí pro každého velitele
+CREATE MATERIALIZED VIEW mv_lode_ve_flotile REFRESH FAST ON DEMAND
 AS
-SELECT f.id_velitele,
-       COUNT(l.id_lode) AS total_ships,
-       SUM(CASE WHEN l.stav_lode = 'poškozená' THEN 1 ELSE 0 END) AS damaged_ships
-FROM honziksick.Flotila f
-         JOIN honziksick.Lod     l ON f.id_flotily = l.id_flotily
+SELECT f.id_velitele, COUNT(l.id_lode) AS lodi_celkem,
+       SUM(CASE WHEN l.stav_lode = 'poškozená' THEN 1 ELSE 0 END) AS poskozene_lode
+FROM Flotila f
+     JOIN Lod l USING (id_flotily)
 GROUP BY f.id_velitele;
 
--- 5.4. Demonstrace funkčnosti materializovaného pohledu
--- Refresh a kontrola dat (jako xkrejcd00)
-BEGIN
-    DBMS_MVIEW.REFRESH('mv_lode_ve_flotile');
-END;
+-- Výpis aktuálního stavu pohledu
+SELECT * FROM mv_lode_ve_flotile;
 
+-- Provedení změny v podkladových datech
+UPDATE Lod
+SET stav_lode = 'poškozená'
+WHERE nazev_lode = 'Vlajková loď Anakina Skywalkera';
+
+-- Ukázka, že data v materiálizovaném pohledu se automaticky neaktualizují
 SELECT * FROM mv_lode_ve_flotile;
 
 
 -- *************************************************************************************** --
--- Vytvoření jednoho komplexního dotazu SELECT využívajícího klauzuli WITH a operátor CASE --                                                       --
+-- Vytvoření jednoho komplexního dotazu SELECT využívajícího klauzuli WITH a operátor CASE --
 -- *************************************************************************************** --
 
-WITH fleet_status AS (
-    SELECT f.id_velitele,
-           COUNT(*) AS total,
-           SUM(CASE WHEN l.stav_lode IN ('poškozená','zničena') THEN 1 ELSE 0 END) AS bad_count
-    FROM honziksick.Flotila f
-             JOIN honziksick.Lod l ON f.id_flotily = l.id_flotily
-    GROUP BY f.id_velitele
-)
-SELECT u.jmeno       AS jmeno_velitele,
-       u.prijmeni    AS prijmeni_velitele,
-       fs.total,
-       fs.bad_count,
-       CASE
-           WHEN fs.bad_count = 0              THEN 'Všechny lodě OK'
-           WHEN fs.bad_count < fs.total     THEN 'Částečné poškození'
-           ELSE 'Vysoké poškození'
-           END AS stav_flotily
-FROM fleet_status fs
-         JOIN honziksick.Uzivatel u ON u.id_uzivatele = fs.id_velitele;
--- Poznámka: Tento dotaz získává pro každého velitele flotily celkový počet lodí,
--- počet poškozenýchzničených lodí a klasifikuje stav flotily pomocí CASE.
+/*
+ * Dotaz analyzuje stav flotil a jejich lodí pro každého velitele. Nejprve vypočítá celkový
+ * počet lodí a počet poškozených/zničených lodí ve flotilách. Poté klasifikuje stav flotily
+ * na základě míry poškození dané flotily a NAKONEC spojuje výsledky s informacemi o velitelích.
+ */
 
-
+WITH stav_flotily
+     AS (
+    -- Počítání statistiky stavu flotily pro každého velitele
+    SELECT f.id_velitele, COUNT(*) AS flotil_celkem,
+           SUM(CASE WHEN l.stav_lode IN ('poškozená', 'zničená') THEN 1 ELSE 0 END) AS pocet_poskozenych_lodi
+    FROM Flotila f
+         JOIN Lod l ON f.id_flotily = l.id_flotily
+    GROUP BY f.id_velitele)
+SELECT u.jmeno AS jmeno_velitele, u.prijmeni AS prijmeni_velitele,
+       sf.flotil_celkem AS celkem_lodi, sf.pocet_poskozenych_lodi AS poskozene_lode,
+       -- Klasifikace stavu flotily pomocí CASE
+       CASE WHEN sf.pocet_poskozenych_lodi = 0 THEN 'Všechny lodě OK'
+            WHEN sf.pocet_poskozenych_lodi < sf.flotil_celkem / 2 THEN 'Nízké poškození'
+            WHEN sf.pocet_poskozenych_lodi < sf.flotil_celkem THEN 'Střední poškození'
+            ELSE 'Kritické poškození'
+       END AS stav_flotily
+FROM stav_flotily sf
+     JOIN Uzivatel u ON u.id_uzivatele = sf.id_velitele
+ORDER BY sf.pocet_poskozenych_lodi DESC;
 
 -- konec souboru --
