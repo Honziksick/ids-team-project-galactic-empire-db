@@ -17,7 +17,12 @@ Podrobné informace o projektu jsou k nahlédnutí ve složce `info/` ve formát
 
 ## Hodnocení
 
-**Hodnocení**: xx.xx/xx.xx b.
+**Hodnocení**: 34.00/34.00 b.
+
+1. **Datový model (ERD), model případů užití**: 5.00/5.00 b.
+2. **SQL skript pro vytvoření objektů schématu databáze**: 5.00/5.00 b.
+3. **SQL skript s několika dotazy SELECT**: 5.00/5.00 b.
+4. **Poslední SQL skript (včetně obhajoby)**: 19.00/19.00 b.
 
 ## Licence
 
@@ -25,4 +30,4 @@ Projekt je distribuován s otevřenými zdrojovými texty pod licencí `GNU GPL 
 
 ---
 
-*Datum poslední úpravy: 27.02.2025, 22:17*
+*Datum poslední úpravy: 25.06.2025, 12:17*

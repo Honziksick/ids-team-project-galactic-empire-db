@@ -1,0 +1,29 @@
+1) Download 'Oracle Database 19c for Microsoft Windows x64 (64-bit)'
+    - `https://www.oracle.com/database/technologies/oracle-database-software-downloads.html#db_ee`
+
+2) Unpack the ZIP archive somewhere, where you want the installation to be located
+    - NOTE: The path must not contain any spaces
+
+3) Run `setup.exe`, which is located in the unpacked directory root
+
+4) Go through the setup guide - I recommend choosing the default options. Be sure to leave the ORACLE PDB option allowed.
+
+5) Open your powershell terminal and execute the following commands:
+
+    ```powershell
+    $ sqlplus / as sysdba
+    ```
+
+    ```sql
+    SQL> ALTER USER system IDENTIFIED BY some_system_admin_password;
+    SQL> ALTER SESSION SET CONTAINER = ORCLPDB;
+    SQL> CREATE USER some_username IDENTIFIED BY some_password;
+    SQL> ALTER PLUGGABLE DATABASE ORCLPDB SAVE STATE;
+    SQL> GRANT DBA TO some_username;
+    ```
+
+6) Now you are ready to connect to `localhost` (don't use SID, use Service Name):
+    - Hostname/Host: `localhost`
+    - Port: `1521`
+    - Service name: `orclpdb` OR `orclpdb.home` OR `xe` (it depands on how you set it up during install)
+    - Username and password from step 5
